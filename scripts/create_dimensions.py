@@ -1,5 +1,6 @@
 import sys
 from datetime import datetime, timezone
+from math import isnan
 from pathlib import Path
 
 import pandas as pd
@@ -225,7 +226,16 @@ def get_col(df: pd.DataFrame, *candidates: str) -> pd.Series:
 def _bulk_insert(cur, table_name: str, columns: list[str], df: pd.DataFrame) -> None:
     if df.empty:
         return
-    values = [tuple(row) for row in df[columns].itertuples(index=False, name=None)]
+
+    def _clean(v):
+        if isinstance(v, float) and isnan(v):
+            return None
+        return v
+
+    values = [
+        tuple(_clean(v) for v in row)
+        for row in df[columns].itertuples(index=False, name=None)
+    ]
     cols_str = ", ".join(columns)
     template = f"({', '.join(['%s'] * len(columns))})"
     execute_values(

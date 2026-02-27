@@ -3,6 +3,7 @@ token.json
 .ruff_cache/
 *.pyc
 __pycache__/
+client_secret_*.json
 
 # Datos (archivos grandes, se generan localmente)
 data/

@@ -289,8 +289,8 @@ def load_fact_estudiantes(
                 {mun_ies_col} as codigo_municipio_ies,
                 {mun_prog_col} as codigo_municipio_programa,
                 id_sexo,
-                CAST(ano AS INTEGER) as ano,
-                CAST(semestre AS INTEGER) as semestre,
+                CAST(ano AS DOUBLE PRECISION)::INTEGER as ano,
+                CAST(semestre AS DOUBLE PRECISION)::INTEGER as semestre,
                 {coalesce_expr} as cantidad
             FROM "{table_name}"
             WHERE codigo_de_la_institucion IS NOT NULL
@@ -428,8 +428,8 @@ def load_fact_docentes(
             id_maximo_nivel_de_formacion_del_docente,
             id_tiempo_de_dedicacion,
             id_tipo_de_contrato,
-            CAST(ano AS INTEGER) as ano,
-            CAST(semestre AS INTEGER) as semestre,
+            CAST(ano AS DOUBLE PRECISION)::INTEGER as ano,
+            CAST(semestre AS DOUBLE PRECISION)::INTEGER as semestre,
             {coalesce_expr} as cantidad
         FROM "{table_name}"
         WHERE codigo_de_la_institucion IS NOT NULL
@@ -542,8 +542,8 @@ def load_fact_administrativos(
         SELECT
             codigo_de_la_institucion,
             {mun_ies_col} as codigo_municipio_ies,
-            CAST(ano AS INTEGER) as ano,
-            CAST(semestre AS INTEGER) as semestre,
+            CAST(ano AS DOUBLE PRECISION)::INTEGER as ano,
+            CAST(semestre AS DOUBLE PRECISION)::INTEGER as semestre,
             auxiliar,
             tecnico,
             profesional,
