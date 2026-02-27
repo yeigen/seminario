@@ -1,20 +1,18 @@
 import json
-from pathlib import Path
+import sqlite3
 from datetime import datetime, timezone
 
 import pandas as pd
 
 from config.globals import (
-    RAW_DATA_DIR,
-    PROCESSED_DIR,
     LINEAGE_PATH,
-    PROCESSED_SNIES_DIR,
-    CSV_ENCODINGS,
+    SQLITE_DB_PATH,
+    SNIES_CATEGORIES,
     CSV_DATASETS,
-    OUTPUT_EXTENSION,
+    CSV_ENCODINGS,
     raw_csv_path,
-    processed_parquet_path,
 )
+from utils.logger import logger
 
 
 def load_lineage() -> list:
@@ -85,119 +83,162 @@ def drop_empty_rows(df: pd.DataFrame) -> pd.DataFrame:
     return df.dropna(how="all").reset_index(drop=True)
 
 
-def standardize_year_column(df: pd.DataFrame, year_value: int) -> pd.DataFrame:
-    year_candidates = [
-        c for c in df.columns if "ano" in c or "year" in c or "periodo" in c
-    ]
-    if not year_candidates:
-        df["anio"] = year_value
+def drop_junk_columns(df: pd.DataFrame) -> pd.DataFrame:
+    unnamed = [c for c in df.columns if c.startswith("unnamed")]
+    if unnamed:
+        df = df.drop(columns=unnamed)
     return df
 
 
-def clean_snies_file(path: Path, category: str, year: str) -> pd.DataFrame | None:
-    try:
-        df = pd.read_excel(path, engine="openpyxl")
-    except Exception as e:
-        print(f"  [ERROR] No se pudo leer {path}: {e}")
-        return None
-
-    rows_in = len(df)
+def clean_snies_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = normalize_columns(df)
     df = drop_junk_columns(df)
     df = clean_text_columns(df)
     df = drop_empty_rows(df)
-    df = standardize_year_column(df, int(year))
-
-    dest = PROCESSED_SNIES_DIR / category / f"{category}-{year}{OUTPUT_EXTENSION}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(dest, index=False)
-
-    record_lineage(
-        str(path),
-        str(dest),
-        f"clean_snies_{category}",
-        rows_in,
-        len(df),
-        len(df.columns),
-    )
     return df
 
 
-def clean_csv_file(path: Path, dest_name: str, sep: str = ",") -> pd.DataFrame | None:
-    try:
-        for encoding in CSV_ENCODINGS:
-            try:
-                df = pd.read_csv(path, sep=sep, encoding=encoding, low_memory=False)
-                break
-            except UnicodeDecodeError:
-                continue
-        else:
-            print(f"  [ERROR] No se pudo decodificar {path}")
-            return None
-    except Exception as e:
-        print(f"  [ERROR] No se pudo leer {path}: {e}")
-        return None
-
-    rows_in = len(df)
+def clean_csv_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = normalize_columns(df)
     df = drop_junk_columns(df)
     df = clean_text_columns(df)
     df = drop_empty_rows(df)
-
-    dest = processed_parquet_path(dest_name)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(dest, index=False)
-
-    record_lineage(
-        str(path), str(dest), f"clean_{dest_name}", rows_in, len(df), len(df.columns)
-    )
     return df
+
+
+def table_name_from_dataset_key(dataset_key: str) -> str:
+    return dataset_key.split("/")[-1]
+
+
+def load_csv_into_sqlite(conn: sqlite3.Connection, dataset_key: str) -> bool:
+    path = raw_csv_path(dataset_key)
+    if not path.exists():
+        logger.warning("CSV no encontrado: %s", path)
+        return False
+
+    table = table_name_from_dataset_key(dataset_key)
+    sep = ","
+
+    for encoding in CSV_ENCODINGS:
+        try:
+            df = pd.read_csv(path, sep=sep, encoding=encoding, low_memory=False)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        logger.error("No se pudo decodificar %s", path)
+        return False
+
+    df.to_sql(table, conn, if_exists="replace", index=False)
+    logger.info("CSV cargado en SQLite tabla '%s': %d filas", table, len(df))
+    return True
+
+
+def get_all_tables(conn: sqlite3.Connection) -> list[str]:
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    )
+    return [row[0] for row in cursor.fetchall()]
 
 
 def transform_all():
-    print("=== TRANSFORMACIÓN Y LIMPIEZA ===\n")
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info("=" * 50)
+    logger.info("TRANSFORMACIÓN Y LIMPIEZA")
+    logger.info("=" * 50)
+
+    if not SQLITE_DB_PATH.exists():
+        logger.error("Base de datos no encontrada: %s", SQLITE_DB_PATH)
+        return {}
+
+    conn = sqlite3.connect(SQLITE_DB_PATH)
     results = {}
 
-    print("[1/3] Limpiando SNIES...")
-    snies_dir = RAW_DATA_DIR / "snies"
-    if snies_dir.exists():
-        for category_dir in sorted(snies_dir.iterdir()):
-            if not category_dir.is_dir():
-                continue
-            category = category_dir.name
-            for xlsx_file in sorted(category_dir.glob("*.xlsx")):
-                year = xlsx_file.stem.split("-")[-1]
-                print(f"  Procesando {category}/{year}...")
-                df = clean_snies_file(xlsx_file, category, year)
-                if df is not None:
-                    results[f"snies/{category}/{year}"] = {
-                        "rows": len(df),
-                        "cols": len(df.columns),
-                        "columns": list(df.columns),
-                    }
+    logger.info("[1/2] Transformando tablas SNIES...")
+    for category in SNIES_CATEGORIES:
+        try:
+            df = pd.read_sql(f'SELECT * FROM "{category}"', conn)
+        except Exception as e:
+            logger.warning("No se pudo leer tabla '%s': %s", category, e)
+            continue
 
-    print("\n[2/3] Limpiando Seguimiento PND...")
-    pnd_path = raw_csv_path(CSV_DATASETS[0])
-    if pnd_path.exists():
-        df = clean_csv_file(pnd_path, CSV_DATASETS[0])
-        if df is not None:
-            results[CSV_DATASETS[0]] = {
-                "rows": len(df),
-                "cols": len(df.columns),
-                "columns": list(df.columns),
-            }
+        rows_in = len(df)
+        if rows_in == 0:
+            logger.info("  %s: tabla vacía, omitiendo", category)
+            continue
 
-    print("\n[3/3] Limpiando Saber 3-5-9...")
-    saber_path = raw_csv_path(CSV_DATASETS[1])
-    if saber_path.exists():
-        df = clean_csv_file(saber_path, CSV_DATASETS[1], sep=",")
-        if df is not None:
-            results[CSV_DATASETS[1]] = {
-                "rows": len(df),
-                "cols": len(df.columns),
-                "columns": list(df.columns),
-            }
+        logger.info("  %s: %d filas leídas", category, rows_in)
+        df = clean_snies_dataframe(df)
 
-    print(f"\n=== TRANSFORMACIÓN COMPLETA: {len(results)} datasets ===")
+        df.to_sql(category, conn, if_exists="replace", index=False)
+
+        record_lineage(
+            f"sqlite:{category}",
+            f"sqlite:{category}",
+            f"transform_snies_{category}",
+            rows_in,
+            len(df),
+            len(df.columns),
+        )
+
+        results[category] = {
+            "rows": len(df),
+            "cols": len(df.columns),
+            "columns": list(df.columns),
+        }
+        logger.info(
+            "  %s: %d → %d filas, %d columnas",
+            category,
+            rows_in,
+            len(df),
+            len(df.columns),
+        )
+
+    logger.info("[2/2] Cargando y transformando datasets CSV...")
+    for dataset_key in CSV_DATASETS:
+        table = table_name_from_dataset_key(dataset_key)
+        loaded = load_csv_into_sqlite(conn, dataset_key)
+
+        if not loaded:
+            logger.warning("  %s: no se pudo cargar, omitiendo", dataset_key)
+            continue
+
+        try:
+            df = pd.read_sql(f'SELECT * FROM "{table}"', conn)
+        except Exception as e:
+            logger.warning("No se pudo leer tabla '%s': %s", table, e)
+            continue
+
+        rows_in = len(df)
+        logger.info("  %s: %d filas leídas", table, rows_in)
+        df = clean_csv_dataframe(df)
+
+        df.to_sql(table, conn, if_exists="replace", index=False)
+
+        record_lineage(
+            f"sqlite:{table}",
+            f"sqlite:{table}",
+            f"transform_csv_{table}",
+            rows_in,
+            len(df),
+            len(df.columns),
+        )
+
+        results[table] = {
+            "rows": len(df),
+            "cols": len(df.columns),
+            "columns": list(df.columns),
+        }
+        logger.info(
+            "  %s: %d → %d filas, %d columnas",
+            table,
+            rows_in,
+            len(df),
+            len(df.columns),
+        )
+
+    conn.close()
+
+    logger.info("=" * 50)
+    logger.info("TRANSFORMACIÓN COMPLETA: %d datasets", len(results))
+    logger.info("=" * 50)
     return results

@@ -22,6 +22,11 @@ def run_pipeline(skip_ingest: bool = False):
         ingest_all(PRIORITY_FILES, max_snies_size_mb=MAX_SNIES_FILE_SIZE_MB)
         print()
 
+    print("=== CREANDO BASE DE DATOS SQLite ===\n")
+    create_sqlite_db()
+    print(f"  DB: {SQLITE_DB_PATH}")
+    print()
+
     transform_all()
     print()
 
