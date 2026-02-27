@@ -1,5 +1,4 @@
 import argparse
-import io
 import sys
 from pathlib import Path
 
@@ -58,17 +57,15 @@ def get_file_size(service, file_id: str) -> int:
 def download_file(service, file_id: str, dest_path: Path) -> int:
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     request = service.files().get_media(fileId=file_id)
-    buffer = io.BytesIO()
-    downloader = MediaIoBaseDownload(buffer, request)
-    done = False
-    while not done:
-        status, done = downloader.next_chunk()
-        if status:
-            pct = int(status.progress() * 100)
-            logger.debug("  Progreso: %d%%", pct)
-    buffer.seek(0)
+
     with open(dest_path, "wb") as f:
-        f.write(buffer.read())
+        downloader = MediaIoBaseDownload(f, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            if status:
+                logger.debug("  Progreso: %d%%", int(status.progress() * 100))
+
     return dest_path.stat().st_size
 
 
@@ -126,22 +123,10 @@ def download_all(service) -> tuple[int, int]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Descarga archivos SNIES desde Google Drive.",
-    )
+    parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
-        "--all",
-        action="store_true",
-        dest="download_all",
-        help="Descargar todas las categorías SNIES.",
-    )
-    group.add_argument(
-        "--category",
-        type=str,
-        choices=SNIES_CATEGORIES,
-        help="Descargar una categoría específica.",
-    )
+    group.add_argument("--all", action="store_true", dest="download_all")
+    group.add_argument("--category", type=str, choices=SNIES_CATEGORIES)
     return parser.parse_args()
 
 

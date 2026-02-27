@@ -1,132 +1,111 @@
-"""
-Normaliza los datos de texto en la base de datos SQLite.
-
-Aplica las siguientes transformaciones a todas las columnas TEXT:
-    1. Minúsculas
-    2. Eliminar tildes (á→a, é→e, í→i, ó→o, ú→u, ñ→n)
-    3. Trim + colapsar espacios múltiples
-    4. Strings vacíos o solo espacios → NULL
-
-Se procesan:
-    - Tablas de dimensiones (dim_*)
-    - Tablas de hechos (fact_*) si contienen columnas TEXT relevantes
-    - Tablas fuente (*_unified y tablas base)
-
-Columnas excluidas: created_at, updated_at (timestamps).
-
-Uso:
-    uv run python scripts/normalize_data.py
-"""
-
-import re
-import sqlite3
 import sys
 import time
 from pathlib import Path
 
-import pandas as pd
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from config.globals import SQLITE_DB_PATH
-from utils.logger import logger
-
-# ──────────────────────────────────────────────────────────────
-# Columnas que NO se deben normalizar (timestamps, IDs técnicos)
-# ──────────────────────────────────────────────────────────────
-EXCLUDED_COLUMNS = {"created_at", "updated_at"}
-
-# Mapeo explícito de caracteres con tilde y ñ
-ACCENT_MAP = str.maketrans(
-    "áéíóúÁÉÍÓÚàèìòùÀÈÌÒÙäëïöüÄËÏÖÜñÑ",
-    "aeiouAEIOUaeiouAEIOUaeiouAEIOUnN",
+from config.globals import PG_SCHEMA_RAW
+from utils.db import (
+    get_columns,
+    get_row_count,
+    list_tables,
+    managed_connection,
 )
+from utils.logger import logger
+from utils.text import create_pg_normalize_function
 
-# Regex para colapsar espacios múltiples
-MULTI_SPACE_RE = re.compile(r"\s{2,}")
-
-
-# ──────────────────────────────────────────────────────────────
-# Funciones de normalización
-# ──────────────────────────────────────────────────────────────
+EXCLUDED_COLUMNS = {"created_at", "updated_at"}
+NULL_THRESHOLD_PCT = 90.0
+TARGET_SCHEMA: str = PG_SCHEMA_RAW
 
 
-def remove_accents(text: str) -> str:
-    """Elimina tildes y convierte ñ→n usando mapeo directo."""
-    return text.translate(ACCENT_MAP)
+def get_all_tables(schema: str) -> list[str]:
+    return list_tables(schema)
 
 
-def normalize_text(text: str) -> str | None:
-    """Aplica todas las normalizaciones a un string.
-
-    1. Strip de espacios al inicio y final.
-    2. Si queda vacío → None (se convertirá a NULL en SQL).
-    3. Minúsculas.
-    4. Eliminar tildes.
-    5. Colapsar espacios múltiples a uno solo.
-    """
-    text = text.strip()
-    if not text:
-        return None
-    text = text.lower()
-    text = remove_accents(text)
-    text = MULTI_SPACE_RE.sub(" ", text)
-    return text
-
-
-# ──────────────────────────────────────────────────────────────
-# Funciones de introspección de la base de datos
-# ──────────────────────────────────────────────────────────────
-
-
-def get_all_tables(conn: sqlite3.Connection) -> list[str]:
-    """Retorna todas las tablas de la base de datos (excepto sqlite_sequence)."""
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master "
-        "WHERE type='table' AND name != 'sqlite_sequence' "
-        "ORDER BY name"
-    ).fetchall()
-    return [row[0] for row in rows]
-
-
-def get_text_columns(conn: sqlite3.Connection, table_name: str) -> list[str]:
-    """Retorna las columnas TEXT de una tabla, excluyendo las protegidas."""
-    cols = conn.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+def get_text_columns(schema: str, table_name: str) -> list[str]:
+    cols = get_columns(schema, table_name)
     return [
-        col[1]
+        col["column_name"]
         for col in cols
-        if col[2].upper() == "TEXT" and col[1] not in EXCLUDED_COLUMNS
+        if col["data_type"].upper() in ("TEXT", "CHARACTER VARYING")
+        and col["column_name"] not in EXCLUDED_COLUMNS
     ]
 
 
-def get_row_count(conn: sqlite3.Connection, table_name: str) -> int:
-    """Retorna el número de filas de una tabla."""
-    return conn.execute(f'SELECT COUNT(*) FROM "{table_name}"').fetchone()[0]
+def get_all_columns_info(schema: str, table_name: str) -> list[dict]:
+    return [
+        {
+            "name": c["column_name"],
+            "type": c["data_type"],
+            "ordinal": c["ordinal_position"],
+        }
+        for c in get_columns(schema, table_name)
+    ]
 
 
-# ──────────────────────────────────────────────────────────────
-# Normalización vía SQL puro (UPDATE in-place)
-# ──────────────────────────────────────────────────────────────
+def _create_normalize_function(schema: str) -> None:
+    with managed_connection(schema=schema) as conn:
+        create_pg_normalize_function(conn)
 
 
-# Registrar función personalizada en SQLite para usar en UPDATE
-def _register_normalize_function(conn: sqlite3.Connection) -> None:
-    """Registra la función normalize() como UDF de SQLite."""
-    conn.create_function("normalize", 1, normalize_text, deterministic=True)
+def drop_high_null_columns(
+    schema: str, table_name: str, threshold: float = NULL_THRESHOLD_PCT
+) -> list[str]:
+    row_count = get_row_count(schema, table_name)
+    if row_count == 0:
+        return []
+
+    candidate_cols = [
+        col_info["name"]
+        for col_info in get_all_columns_info(schema, table_name)
+        if col_info["name"] != "id" and col_info["name"] not in EXCLUDED_COLUMNS
+    ]
+
+    if not candidate_cols:
+        return []
+
+    with managed_connection(schema=schema) as conn:
+        null_counts_sql = ", ".join(
+            f'COUNT(*) FILTER (WHERE "{col}" IS NULL)' for col in candidate_cols
+        )
+        with conn.cursor() as cur:
+            cur.execute(f'SELECT {null_counts_sql} FROM "{table_name}"')
+            null_counts = cur.fetchone()
+
+        cols_to_drop: list[str] = []
+        for i, col_name in enumerate(candidate_cols):
+            null_pct = (null_counts[i] / row_count) * 100
+            if null_pct > threshold:
+                cols_to_drop.append(col_name)
+                logger.debug(
+                    "[%s] Columna '%s' tiene %.1f%% nulos (umbral: %.1f%%)",
+                    table_name,
+                    col_name,
+                    null_pct,
+                    threshold,
+                )
+
+        if not cols_to_drop:
+            return []
+
+        drop_clauses = ", ".join(f'DROP COLUMN "{col}"' for col in cols_to_drop)
+        with conn.cursor() as cur:
+            cur.execute(f'ALTER TABLE "{table_name}" {drop_clauses}')
+
+    logger.info(
+        "[%s] Eliminadas %d columnas con >%.0f%% nulos: %s",
+        table_name,
+        len(cols_to_drop),
+        threshold,
+        cols_to_drop,
+    )
+
+    return cols_to_drop
 
 
-def normalize_table(conn: sqlite3.Connection, table_name: str) -> dict:
-    """Normaliza todas las columnas TEXT de una tabla usando UPDATE directo.
-
-    Estrategia:
-        Para cada columna TEXT ejecuta:
-          UPDATE tabla SET col = normalize(col) WHERE col IS NOT NULL;
-        Luego convierte strings vacíos a NULL:
-          UPDATE tabla SET col = NULL WHERE TRIM(col) = '' OR col = '';
-
-    Retorna un dict con estadísticas de la operación.
-    """
-    text_cols = get_text_columns(conn, table_name)
+def normalize_table(schema: str, table_name: str) -> dict:
+    text_cols = get_text_columns(schema, table_name)
     if not text_cols:
         return {
             "table": table_name,
@@ -137,7 +116,7 @@ def normalize_table(conn: sqlite3.Connection, table_name: str) -> dict:
             "nullified": 0,
         }
 
-    row_count = get_row_count(conn, table_name)
+    row_count = get_row_count(schema, table_name)
     if row_count == 0:
         return {
             "table": table_name,
@@ -155,32 +134,32 @@ def normalize_table(conn: sqlite3.Connection, table_name: str) -> dict:
         row_count,
     )
 
-    total_nullified = 0
+    with managed_connection(schema=schema) as conn:
+        with conn.cursor() as cur:
+            null_counts_sql = ", ".join(
+                f'COUNT(*) FILTER (WHERE "{col}" IS NULL)' for col in text_cols
+            )
+            cur.execute(f'SELECT {null_counts_sql} FROM "{table_name}"')
+            nulls_before = cur.fetchone()
 
-    for col in text_cols:
-        # Contar NULLs antes
-        nulls_before = conn.execute(
-            f'SELECT COUNT(*) FROM "{table_name}" WHERE "{col}" IS NULL'
-        ).fetchone()[0]
+            set_clauses = ", ".join(
+                f'"{col}" = pg_normalize_text("{col}")' for col in text_cols
+            )
+            where_clauses = " OR ".join(f'"{col}" IS NOT NULL' for col in text_cols)
+            cur.execute(
+                f'UPDATE "{table_name}" SET {set_clauses} WHERE {where_clauses}'
+            )
 
-        # Aplicar normalización vía UDF registrada en SQLite
-        conn.execute(
-            f'UPDATE "{table_name}" SET "{col}" = normalize("{col}") '
-            f'WHERE "{col}" IS NOT NULL'
-        )
+            cur.execute(f'SELECT {null_counts_sql} FROM "{table_name}"')
+            nulls_after = cur.fetchone()
 
-        # Contar NULLs después (normalize() retorna None para vacíos)
-        nulls_after = conn.execute(
-            f'SELECT COUNT(*) FROM "{table_name}" WHERE "{col}" IS NULL'
-        ).fetchone()[0]
+    total_nullified = sum(
+        (nulls_after[i] - nulls_before[i]) for i in range(len(text_cols))
+    )
 
-        total_nullified += nulls_after - nulls_before
-
-    conn.commit()
-
-    final_count = get_row_count(conn, table_name)
+    final_count = get_row_count(schema, table_name)
     logger.info(
-        "[%s] Completado: %d filas, %d nuevos NULL (vacios→NULL)",
+        "[%s] Completado: %d filas, %d nuevos NULL (vacios->NULL)",
         table_name,
         final_count,
         total_nullified,
@@ -196,66 +175,67 @@ def normalize_table(conn: sqlite3.Connection, table_name: str) -> dict:
     }
 
 
-# ──────────────────────────────────────────────────────────────
-# Verificación post-normalización
-# ──────────────────────────────────────────────────────────────
-
-
-def verify_normalization(conn: sqlite3.Connection, tables: list[str]) -> bool:
-    """Verifica que no queden textos con tildes, mayúsculas o espacios extra."""
+def verify_normalization(schema: str, tables: list[str]) -> bool:
     logger.info("Verificando normalizacion...")
-
     issues: list[str] = []
 
-    for table_name in tables:
-        text_cols = get_text_columns(conn, table_name)
-        if not text_cols:
-            continue
+    with managed_connection(schema=schema) as conn:
+        with conn.cursor() as cur:
+            for table_name in tables:
+                text_cols = get_text_columns(schema, table_name)
+                if not text_cols:
+                    continue
 
-        for col in text_cols:
-            # Verificar tildes
-            rows_with_accents = conn.execute(
-                f'SELECT COUNT(*) FROM "{table_name}" '
-                f"WHERE \"{col}\" GLOB '*[áéíóúÁÉÍÓÚñÑàèìòùÀÈÌÒÙ]*'"
-            ).fetchone()[0]
-
-            if rows_with_accents > 0:
-                issues.append(
-                    f"  {table_name}.{col}: {rows_with_accents} filas con tildes"
+                accent_counts_sql = ", ".join(
+                    f"COUNT(*) FILTER (WHERE \"{col}\" ~ '[áéíóúÁÉÍÓÚñÑàèìòùÀÈÌÒÙ]')"
+                    for col in text_cols
                 )
+                cur.execute(f'SELECT {accent_counts_sql} FROM "{table_name}"')
+                accent_results = cur.fetchone()
 
-            # Verificar mayúsculas (sample check para rendimiento)
-            sample = conn.execute(
-                f'SELECT "{col}" FROM "{table_name}" '
-                f'WHERE "{col}" IS NOT NULL LIMIT 100'
-            ).fetchall()
+                for i, col in enumerate(text_cols):
+                    if accent_results[i] > 0:
+                        issues.append(
+                            f"  {table_name}.{col}: {accent_results[i]} filas con tildes"
+                        )
 
-            upper_count = sum(1 for (val,) in sample if val and val != val.lower())
-            if upper_count > 0:
-                issues.append(
-                    f"  {table_name}.{col}: {upper_count}/100 muestras con mayusculas"
+                space_counts_sql = ", ".join(
+                    f"COUNT(*) FILTER (WHERE \"{col}\" LIKE '%%  %%')"
+                    for col in text_cols
                 )
-
-            # Verificar espacios múltiples
-            rows_multi_space = conn.execute(
-                f'SELECT COUNT(*) FROM "{table_name}" WHERE "{col}" LIKE \'%  %\''
-            ).fetchone()[0]
-
-            if rows_multi_space > 0:
-                issues.append(
-                    f"  {table_name}.{col}: {rows_multi_space} filas con espacios multiples"
+                empty_counts_sql = ", ".join(
+                    f"COUNT(*) FILTER (WHERE \"{col}\" = '' OR TRIM(\"{col}\") = '')"
+                    for col in text_cols
                 )
-
-            # Verificar strings vacíos
-            rows_empty = conn.execute(
-                f'SELECT COUNT(*) FROM "{table_name}" '
-                f"WHERE \"{col}\" = '' OR TRIM(\"{col}\") = ''"
-            ).fetchone()[0]
-
-            if rows_empty > 0:
-                issues.append(
-                    f"  {table_name}.{col}: {rows_empty} filas con strings vacios"
+                cur.execute(
+                    f'SELECT {space_counts_sql}, {empty_counts_sql} FROM "{table_name}"'
                 )
+                combined = cur.fetchone()
+                n = len(text_cols)
+
+                for i, col in enumerate(text_cols):
+                    if combined[i] > 0:
+                        issues.append(
+                            f"  {table_name}.{col}: {combined[i]} filas con espacios multiples"
+                        )
+                    if combined[n + i] > 0:
+                        issues.append(
+                            f"  {table_name}.{col}: {combined[n + i]} filas con strings vacios"
+                        )
+
+                for col in text_cols:
+                    cur.execute(
+                        f'SELECT "{col}" FROM "{table_name}" '
+                        f'WHERE "{col}" IS NOT NULL LIMIT 100'
+                    )
+                    sample = cur.fetchall()
+                    upper_count = sum(
+                        1 for (val,) in sample if val and val != val.lower()
+                    )
+                    if upper_count > 0:
+                        issues.append(
+                            f"  {table_name}.{col}: {upper_count}/100 muestras con mayusculas"
+                        )
 
     if issues:
         logger.warning("Se encontraron problemas de normalizacion:")
@@ -267,67 +247,71 @@ def verify_normalization(conn: sqlite3.Connection, tables: list[str]) -> bool:
     return True
 
 
-# ──────────────────────────────────────────────────────────────
-# Main
-# ──────────────────────────────────────────────────────────────
+def process_schema(schema: str) -> dict:
+    logger.info("-" * 60)
+    logger.info("Procesando schema: %s", schema)
+    logger.info("-" * 60)
 
+    all_tables = get_all_tables(schema)
+    if not all_tables:
+        logger.warning("Schema '%s' no tiene tablas", schema)
+        return {"db": schema, "status": "empty", "results": []}
 
-def main():
-    logger.info("=" * 60)
-    logger.info("Normalizacion de datos de texto — SQLite")
-    logger.info("Base de datos: %s", SQLITE_DB_PATH)
-    logger.info("=" * 60)
+    _create_normalize_function(schema)
 
-    if not SQLITE_DB_PATH.exists():
-        logger.error("Base de datos no encontrada: %s", SQLITE_DB_PATH)
-        sys.exit(1)
-
-    conn = sqlite3.connect(SQLITE_DB_PATH)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-
-    # Registrar UDF de normalización
-    _register_normalize_function(conn)
-
-    all_tables = get_all_tables(conn)
-
-    # Clasificar tablas
-    dim_tables = sorted([t for t in all_tables if t.startswith("dim_")])
-    fact_tables = sorted([t for t in all_tables if t.startswith("fact_")])
+    dim_tables = sorted(t for t in all_tables if t.startswith("dim_"))
+    fact_tables = sorted(t for t in all_tables if t.startswith("fact_"))
     other_tables = sorted(
-        [
-            t
-            for t in all_tables
-            if not t.startswith("dim_") and not t.startswith("fact_")
-        ]
+        t for t in all_tables if not t.startswith("dim_") and not t.startswith("fact_")
     )
 
-    logger.info("Tablas encontradas:")
+    logger.info("Tablas encontradas en '%s':", schema)
     logger.info("  Dimensiones: %s", dim_tables)
     logger.info("  Hechos:      %s", fact_tables)
     logger.info("  Otras:       %s", other_tables)
 
-    # Orden de procesamiento: dimensiones → hechos → otras
     tables_to_process = dim_tables + fact_tables + other_tables
+
+    total_dropped: dict[str, list[str]] = {}
+    for table_name in tables_to_process:
+        dropped = drop_high_null_columns(schema, table_name)
+        if dropped:
+            total_dropped[table_name] = dropped
+
+    if total_dropped:
+        logger.info(
+            "Columnas eliminadas (>%.0f%% nulos) en '%s':",
+            NULL_THRESHOLD_PCT,
+            schema,
+        )
+        for tbl, cols in total_dropped.items():
+            logger.info("  %s: %s", tbl, cols)
+
     results: list[dict] = []
-
-    start_time = time.time()
-
     for table_name in tables_to_process:
         t0 = time.time()
-        result = normalize_table(conn, table_name)
-        elapsed = time.time() - t0
-        result["elapsed_s"] = round(elapsed, 2)
+        result = normalize_table(schema, table_name)
+        result["elapsed_s"] = round(time.time() - t0, 2)
         results.append(result)
 
-    total_elapsed = time.time() - start_time
+    processed_tables = [r["table"] for r in results if r["status"] == "ok"]
+    verify_normalization(schema, processed_tables)
 
-    # ──────────────────────────────────────────────────────
-    # Resumen
-    # ──────────────────────────────────────────────────────
-    logger.info("=" * 60)
-    logger.info("Resumen de normalizacion")
-    logger.info("=" * 60)
+    return {
+        "db": schema,
+        "status": "ok",
+        "results": results,
+        "dropped_columns": total_dropped,
+    }
+
+
+def print_summary(db_result: dict) -> None:
+    schema_name = db_result["db"]
+    results = db_result.get("results", [])
+
+    if db_result["status"] in ("not_found", "empty"):
+        logger.info("  %-30s VACIO / NO ENCONTRADO", schema_name)
+        return
 
     total_rows = 0
     total_nullified = 0
@@ -335,75 +319,54 @@ def main():
     skipped = 0
 
     for r in results:
-        status = r["status"]
-        name = r["table"]
-        rows = r["rows"]
-        text_cols = r["text_cols"]
-        nullified = r["nullified"]
-        elapsed = r.get("elapsed_s", 0)
-
-        if status == "ok":
+        if r["status"] == "ok":
             processed += 1
-            total_rows += rows
-            total_nullified += nullified
+            total_rows += r["rows"]
+            total_nullified += r["nullified"]
             logger.info(
                 "  %-40s %8d filas | %2d cols TEXT | %5d ->NULL | %.1fs",
-                name,
-                rows,
-                text_cols,
-                nullified,
-                elapsed,
+                r["table"],
+                r["rows"],
+                r["text_cols"],
+                r["nullified"],
+                r.get("elapsed_s", 0),
             )
         else:
             skipped += 1
-            logger.info(
-                "  %-40s SALTADA (%s)",
-                name,
-                r["reason"],
-            )
+            logger.info("  %-40s SALTADA (%s)", r["table"], r["reason"])
 
-    logger.info("-" * 60)
-    logger.info("  Tablas procesadas:  %d", processed)
-    logger.info("  Tablas saltadas:    %d", skipped)
-    logger.info("  Filas totales:      %d", total_rows)
-    logger.info("  Nuevos NULL:        %d (vacios -> NULL)", total_nullified)
-    logger.info("  Tiempo total:       %.1f s", total_elapsed)
+    dropped = db_result.get("dropped_columns", {})
+    total_cols_dropped = sum(len(v) for v in dropped.values())
 
-    # ──────────────────────────────────────────────────────
-    # Verificación
-    # ──────────────────────────────────────────────────────
-    logger.info("")
-    processed_tables = [r["table"] for r in results if r["status"] == "ok"]
-    verify_normalization(conn, processed_tables)
+    logger.info("  --- schema: %s ---", schema_name)
+    logger.info("  Tablas procesadas:    %d", processed)
+    logger.info("  Tablas saltadas:      %d", skipped)
+    logger.info("  Filas totales:        %d", total_rows)
+    logger.info("  Nuevos NULL:          %d (vacios -> NULL)", total_nullified)
+    logger.info(
+        "  Columnas eliminadas:  %d (>%.0f%% nulos)",
+        total_cols_dropped,
+        NULL_THRESHOLD_PCT,
+    )
 
-    # ──────────────────────────────────────────────────────
-    # Muestras post-normalización
-    # ──────────────────────────────────────────────────────
-    logger.info("")
-    logger.info("Muestras post-normalizacion:")
 
-    # Muestras dinámicas: tomar 3 columnas TEXT del primer registro de cada tabla procesada
-    sample_queries = []
-    for r in results:
-        if r["status"] != "ok":
-            continue
-        tname = r["table"]
-        tcols = get_text_columns(conn, tname)[:3]
-        if tcols:
-            cols_sql = ", ".join(f'"{c}"' for c in tcols)
-            sample_queries.append((tname, f'SELECT {cols_sql} FROM "{tname}" LIMIT 3'))
+def main():
+    logger.info("=" * 60)
+    logger.info("Normalizacion de datos de texto - PostgreSQL")
+    logger.info("Schema objetivo: %s", TARGET_SCHEMA)
+    logger.info("=" * 60)
 
-    for label, query in sample_queries:
-        try:
-            rows = conn.execute(query).fetchall()
-            logger.info("  [%s]", label)
-            for row in rows:
-                logger.info("    %s", row)
-        except Exception as e:
-            logger.warning("  [%s] Error al consultar: %s", label, e)
+    pipeline_start = time.time()
+    db_result = process_schema(TARGET_SCHEMA)
+    total_elapsed = time.time() - pipeline_start
 
-    conn.close()
+    logger.info("=" * 60)
+    logger.info("Resumen de normalizacion")
+    logger.info("=" * 60)
 
+    print_summary(db_result)
+
+    logger.info("Tiempo total: %.1f s", total_elapsed)
     logger.info("=" * 60)
     logger.info("Normalizacion completada exitosamente")
     logger.info("=" * 60)
