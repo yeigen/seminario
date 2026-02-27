@@ -11,3 +11,4 @@ data/
 
 # Logs
 logs/*.log
+logs
