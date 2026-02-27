@@ -90,19 +90,32 @@ def drop_junk_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def clean_snies_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def clean_snies_file(path: Path, category: str, year: str) -> pd.DataFrame | None:
+    try:
+        df = pd.read_excel(path, engine="openpyxl")
+    except Exception as e:
+        print(f"  [ERROR] No se pudo leer {path}: {e}")
+        return None
+
+    rows_in = len(df)
     df = normalize_columns(df)
     df = drop_junk_columns(df)
     df = clean_text_columns(df)
     df = drop_empty_rows(df)
-    return df
+    df = standardize_year_column(df, int(year))
 
+    dest = PROCESSED_SNIES_DIR / category / f"{category}-{year}{OUTPUT_EXTENSION}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(dest, index=False)
 
-def clean_csv_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    df = normalize_columns(df)
-    df = drop_junk_columns(df)
-    df = clean_text_columns(df)
-    df = drop_empty_rows(df)
+    record_lineage(
+        str(path),
+        str(dest),
+        f"clean_snies_{category}",
+        rows_in,
+        len(df),
+        len(df.columns),
+    )
     return df
 
 
