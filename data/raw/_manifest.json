@@ -1,0 +1,247 @@
+{
+  "snies/administrativos/2018": {
+    "file_id": "1eqry9JUwp9-gRjHmHRjWSYQQqh-UhruE",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/administrativos/administrativos-2018.xlsx",
+    "local_md5": "d9e51ed77b4d9b23da7ce388965dbc87",
+    "size_bytes": 82471,
+    "downloaded_at": "2026-02-27T03:27:33.947653+00:00"
+  },
+  "snies/administrativos/2019": {
+    "file_id": "1iEtx8ZXPTPxV-Fy0siqdH0SxhspFrICS",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/administrativos/administrativos-2019.xlsx",
+    "local_md5": "d419008a91e01d95b1203d1e5530a960",
+    "size_bytes": 220687,
+    "downloaded_at": "2026-02-27T03:27:34.841327+00:00"
+  },
+  "snies/administrativos/2020": {
+    "file_id": "14pousi1TN7_UTr6sGdN6rFb7pLRkLu5m",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/administrativos/administrativos-2020.xlsx",
+    "local_md5": "a7b731d5c0d4c3cb047c67c6385a0d63",
+    "size_bytes": 93695,
+    "downloaded_at": "2026-02-27T03:27:35.588225+00:00"
+  },
+  "snies/administrativos/2021": {
+    "file_id": "1e5uRzqe1wYUFQyGN1n8uhhCDxVxfD3Vs",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/administrativos/administrativos-2021.xlsx",
+    "local_md5": "79fd5a73c2f11f61673b0ef881df1d94",
+    "size_bytes": 1570965,
+    "downloaded_at": "2026-02-27T03:27:40.951851+00:00"
+  },
+  "snies/administrativos/2022": {
+    "file_id": "1aLK6zPU6A2kgRQ28X8d1Clhma_Y1E6pC",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/administrativos/administrativos-2022.xlsx",
+    "local_md5": "1a5fea28b99afed445ca8e4b484ffc75",
+    "size_bytes": 87577,
+    "downloaded_at": "2026-02-27T03:27:41.680773+00:00"
+  },
+  "snies/administrativos/2023": {
+    "file_id": "1bScCRFdJYxhYYdaiwZLbPOv_WG2oLA3s",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/administrativos/administrativos-2023.xlsx",
+    "local_md5": "24e04b992ab48917643f3676c4c10734",
+    "size_bytes": 441595,
+    "downloaded_at": "2026-02-27T03:27:42.869496+00:00"
+  },
+  "snies/administrativos/2024": {
+    "file_id": "19WtjTaWUfpBlBsxiWPc_Ze91rU7caPFn",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/administrativos/administrativos-2024.xlsx",
+    "local_md5": "51651d52735cbcb76593009aee293575",
+    "size_bytes": 443979,
+    "downloaded_at": "2026-02-27T03:27:44.124664+00:00"
+  },
+  "snies/admitidos/2018": {
+    "file_id": "1QWnaGMfJrxj1BgQiWLflukNamBRiNqig",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/admitidos/admitidos-2018.xlsx",
+    "local_md5": "7c779d018a680f190e722b2f24ed213a",
+    "size_bytes": 6377139,
+    "downloaded_at": "2026-02-27T03:28:00.926250+00:00"
+  },
+  "snies/admitidos/2019": {
+    "file_id": "168imP28_eKYIc_wun2OelQXHFyhq0Z1R",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/admitidos/admitidos-2019.xlsx",
+    "local_md5": "0815a57dbfa19ad6be7efd676d5eb869",
+    "size_bytes": 9392640,
+    "downloaded_at": "2026-02-27T03:28:27.326265+00:00"
+  },
+  "snies/admitidos/2020": {
+    "file_id": "1gBXRamBb60gcOyz3DktRQ8XjslTaYa_H",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/admitidos/admitidos-2020.xlsx",
+    "local_md5": "791660672b37e78aa921dcc5bc897c92",
+    "size_bytes": 8265637,
+    "downloaded_at": "2026-02-27T03:28:49.077247+00:00"
+  },
+  "snies/admitidos/2021": {
+    "file_id": "1QjmVEMgRZAnUkcZdyyto2dr6sr8201-2",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/admitidos/admitidos-2021.xlsx",
+    "local_md5": "1ef66a39521cfd540b09b9ac71889909",
+    "size_bytes": 8930314,
+    "downloaded_at": "2026-02-27T03:29:12.462662+00:00"
+  },
+  "snies/admitidos/2022": {
+    "file_id": "18q08HzAVuuhs7CBQ99Mpk6jRZZtydX87",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/admitidos/admitidos-2022.xlsx",
+    "local_md5": "78dc7248a2fab1b4f3284755366bdb15",
+    "size_bytes": 8358639,
+    "downloaded_at": "2026-02-27T03:29:36.342047+00:00"
+  },
+  "snies/admitidos/2023": {
+    "file_id": "1Bah8ycayUGP8NRCC0alOKq-YfjgRaAWi",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/admitidos/admitidos-2023.xlsx",
+    "local_md5": "14c515a00eefc9730aaaebc81e80fa68",
+    "size_bytes": 2026617,
+    "downloaded_at": "2026-02-27T03:29:42.241477+00:00"
+  },
+  "snies/admitidos/2024": {
+    "file_id": "1gbL7Z-cK1fw4psP7J9coYsbWxCVNRvyF",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/admitidos/admitidos-2024.xlsx",
+    "local_md5": "4543ecbf5ba3a13435206028d289bfa4",
+    "size_bytes": 9961514,
+    "downloaded_at": "2026-02-27T03:30:06.833526+00:00"
+  },
+  "snies/docentes/2018": {
+    "file_id": "1g3n4u5Ca8Sy3Z7aGwd0YkpMlF08wxSVm",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/docentes/docentes-2018.xlsx",
+    "local_md5": "f9fa4d689ad584aecb45bc256c517a7e",
+    "size_bytes": 1596301,
+    "downloaded_at": "2026-02-27T03:30:11.176517+00:00"
+  },
+  "snies/docentes/2019": {
+    "file_id": "1lgprXFyom5i2h5W7lkYBvdYy8TxaA1cV",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/docentes/docentes-2019.xlsx",
+    "local_md5": "a5bfd8cc7c4eb2bc95a9287857d0c424",
+    "size_bytes": 1713397,
+    "downloaded_at": "2026-02-27T03:30:16.947948+00:00"
+  },
+  "snies/docentes/2020": {
+    "file_id": "1nCMjGpkx7o0YlUT9GDlZeKE_lXVK-1CZ",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/docentes/docentes-2020.xlsx",
+    "local_md5": "35f52df29b34053453a9187eae7b96f8",
+    "size_bytes": 1559682,
+    "downloaded_at": "2026-02-27T03:30:22.675493+00:00"
+  },
+  "snies/docentes/2022": {
+    "file_id": "1FbKgBvLaxcRmRhHcJTZjJzDS9_gLAk2M",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/docentes/docentes-2022.xlsx",
+    "local_md5": "f3a9ed45773b29b2364098610263523d",
+    "size_bytes": 1691200,
+    "downloaded_at": "2026-02-27T03:30:28.508814+00:00"
+  },
+  "snies/docentes/2023": {
+    "file_id": "10FVFpAAs9Jsewf5-2wzecDN0TV6vafbO",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/docentes/docentes-2023.xlsx",
+    "local_md5": "0189918c8e5601d74d4217bfe55d898d",
+    "size_bytes": 9515207,
+    "downloaded_at": "2026-02-27T03:30:53.574172+00:00"
+  },
+  "snies/docentes/2024": {
+    "file_id": "1uhEP7zMyw1MG7Muu3IQ-oGgSom7fwd5v",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/docentes/docentes-2024.xlsx",
+    "local_md5": "4c5a056cb4ff8ba3da8e87555c0f11d1",
+    "size_bytes": 1998274,
+    "downloaded_at": "2026-02-27T03:30:59.370618+00:00"
+  },
+  "snies/graduados/2018": {
+    "file_id": "1WXfJXBAuMMObrSaXUWy1pKvQqcerfDEg",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/graduados/graduados-2018.xlsx",
+    "local_md5": "9b2993764b84cb9762f6c1bd24147d85",
+    "size_bytes": 5920916,
+    "downloaded_at": "2026-02-27T03:31:17.331626+00:00"
+  },
+  "snies/graduados/2019": {
+    "file_id": "1vJNqW7ySusx2BForsvYirFo4Ev-DSa1F",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/graduados/graduados-2019.xlsx",
+    "local_md5": "b391e195c1126365064acd4d3af20fa9",
+    "size_bytes": 7899132,
+    "downloaded_at": "2026-02-27T03:31:38.498327+00:00"
+  },
+  "snies/graduados/2020": {
+    "file_id": "1AeDdwX9mVDiyG2aCE14XdhENVh7QqLBy",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/graduados/graduados-2020.xlsx",
+    "local_md5": "8934a4785895d1dcb8c515610eef0f26",
+    "size_bytes": 7058852,
+    "downloaded_at": "2026-02-27T03:31:52.421448+00:00"
+  },
+  "snies/graduados/2021": {
+    "file_id": "1p72r7b6BY8TFUMKScmw6WaeWgmSQ-Xb9",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/graduados/graduados-2021.xlsx",
+    "local_md5": "2db7dc991a70dddcdbcf2284f34e8d1b",
+    "size_bytes": 7960861,
+    "downloaded_at": "2026-02-27T03:38:08.088742+00:00"
+  },
+  "snies/graduados/2022": {
+    "file_id": "1Eyva7rkqUhIpnU-0StxCT69NZqy6Iha9",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/graduados/graduados-2022.xlsx",
+    "local_md5": "28a770cd43a4fbb32d3255a388d65399",
+    "size_bytes": 7964495,
+    "downloaded_at": "2026-02-27T03:38:29.419884+00:00"
+  },
+  "snies/graduados/2023": {
+    "file_id": "1X5dO8iVQ4-XXH9vKqQP4d6gFpBhyS4gS",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/graduados/graduados-2023.xlsx",
+    "local_md5": "067dfdcda6ed9087d0682c9d158bbd72",
+    "size_bytes": 8310863,
+    "downloaded_at": "2026-02-27T03:38:50.622793+00:00"
+  },
+  "snies/graduados/2024": {
+    "file_id": "1XhI04E1gu1zQ4WuxIr7y2jVn2bSXFim4",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/graduados/graduados-2024.xlsx",
+    "local_md5": "4aed4ece35ac1744a3f600bd1c713be7",
+    "size_bytes": 8470574,
+    "downloaded_at": "2026-02-27T03:39:10.810002+00:00"
+  },
+  "snies/inscritos/2018": {
+    "file_id": "1b2RE4p2OmfkRZNIn9Xoeg7RvbEAQOoWJ",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/inscritos/inscritos-2018.xlsx",
+    "local_md5": "180590871d97f2db7713383e84bcae35",
+    "size_bytes": 6609508,
+    "downloaded_at": "2026-02-27T03:39:30.287797+00:00"
+  },
+  "snies/inscritos/2019": {
+    "file_id": "1ogUuJTiohflsBstib4V-cO1UPOgoo5Yq",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/inscritos/inscritos-2019.xlsx",
+    "local_md5": "35df51eb7dfe250a27cff059e0f7db2c",
+    "size_bytes": 8367558,
+    "downloaded_at": "2026-02-27T03:39:52.128784+00:00"
+  },
+  "snies/inscritos/2020": {
+    "file_id": "1ySvH6UErw0Hbdjg22bCcIHyYjjVQ2e_n",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/inscritos/inscritos-2020.xlsx",
+    "local_md5": "74f564446c5f0e80de7da20f829add06",
+    "size_bytes": 8694454,
+    "downloaded_at": "2026-02-27T03:40:11.968220+00:00"
+  },
+  "snies/inscritos/2021": {
+    "file_id": "14hUMVICAZF-eg7GDNljikxifn6Tkxri9",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/inscritos/inscritos-2021.xlsx",
+    "local_md5": "7ed04df0c43c4b28203f6c7d266303cb",
+    "size_bytes": 8847134,
+    "downloaded_at": "2026-02-27T03:40:31.629713+00:00"
+  },
+  "snies/inscritos/2022": {
+    "file_id": "1FRzfWNOVMrc1PA_qZwbsg8yYsS92Euk5",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/inscritos/inscritos-2022.xlsx",
+    "local_md5": "969e7f6cd8cce5b3da587b562ce95b45",
+    "size_bytes": 8564770,
+    "downloaded_at": "2026-02-27T03:40:53.195786+00:00"
+  },
+  "snies/inscritos/2023": {
+    "file_id": "1n2t-pDh0nVKZP0OqQJxQ0p-k3Q-otQ0K",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/inscritos/inscritos-2023.xlsx",
+    "local_md5": "70f3f99eb68357014a9680c21b9ec521",
+    "size_bytes": 10097834,
+    "downloaded_at": "2026-02-27T03:41:17.162570+00:00"
+  },
+  "snies/inscritos/2024": {
+    "file_id": "1uTfIraRXXofY3V_lgxiw8MgyEqTVGoK6",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/inscritos/inscritos-2024.xlsx",
+    "local_md5": "74e45d44cb6cea141e2599adf7b73b6a",
+    "size_bytes": 10820574,
+    "downloaded_at": "2026-02-27T03:41:42.042758+00:00"
+  },
+  "snies/matriculados/2018": {
+    "file_id": "1GlbW7ru5pPJW0TiSjQoTlP8eyaX6_-3L",
+    "local_path": "/home/yeigen/Documents/seminario/seminario/data/raw/snies/matriculados/matriculados-2018.xlsx",
+    "local_md5": "8ffb996f6cb8377eb2e24de09614fe2d",
+    "size_bytes": 8953064,
+    "downloaded_at": "2026-02-27T03:42:04.466100+00:00"
+  }
+}
