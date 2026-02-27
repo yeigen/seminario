@@ -1,2 +1,4 @@
 .env
 token.json
+venv/
+.ruff_cache/
