@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls dir:*)",
+      "Bash(wc:*)",
+      "Bash(python:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker compose:*)",
+      "Bash(uv:*)",
+      "Bash(POSTGRES_HOST=localhost POSTGRES_PORT=5433 uv run:*)",
+      "Bash(rm:*)"
+    ]
+  }
+}
