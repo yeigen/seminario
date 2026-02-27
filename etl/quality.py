@@ -1,7 +1,6 @@
 import json
-import sqlite3
+from datetime import datetime, timezone
 
-import numpy as np
 import pandas as pd
 
 from config.globals import (
@@ -11,20 +10,12 @@ from config.globals import (
     QUALITY_NULL_THRESHOLD_PCT,
     QUALITY_MIN_COLUMNS,
     CSV_DATASETS,
-    SQLITE_DB_PATH,
+    PG_SCHEMA_RAW,
     SNIES_CATEGORIES,
     processed_parquet_path,
 )
-
-
-class NumpyEncoder(json.JSONEncoder):
-    def default(self, o):
-        if isinstance(o, (np.bool_, np.generic)):
-            return o.item()
-        if isinstance(o, np.ndarray):
-            return o.tolist()
-        return super().default(o)
-
+from utils.db import get_engine, list_tables, managed_connection, table_exists
+from utils.logger import logger
 
 class QualityCheck:
     def __init__(self, name: str, dataset: str):
@@ -41,6 +32,117 @@ class QualityCheck:
             "details": self.details,
         }
 
+def _sql_check_not_empty(schema: str, table: str, dataset: str) -> QualityCheck:
+    qc = QualityCheck("not_empty", dataset)
+    try:
+        with managed_connection(schema=schema) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+                count = cur.fetchone()[0]
+        qc.passed = count > 0
+        qc.details = f"{count} filas"
+    except Exception as e:
+        qc.passed = False
+        qc.details = f"Error: {e}"
+    return qc
+
+def _sql_check_no_duplicate_rows(schema: str, table: str, dataset: str) -> QualityCheck:
+    qc = QualityCheck("no_duplicate_rows", dataset)
+    try:
+        with managed_connection(schema=schema) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+                total = cur.fetchone()[0]
+                cur.execute(
+                    f'SELECT COUNT(*) FROM (SELECT DISTINCT * FROM "{table}") AS sub'
+                )
+                distinct_count = cur.fetchone()[0]
+        dupes = total - distinct_count
+        qc.passed = dupes == 0
+        qc.details = f"{dupes} filas duplicadas de {total}"
+    except Exception as e:
+        qc.passed = False
+        qc.details = f"Error: {e}"
+    return qc
+
+def _sql_check_null_threshold(
+    schema: str,
+    table: str,
+    dataset: str,
+    threshold: float = QUALITY_NULL_THRESHOLD_PCT,
+) -> QualityCheck:
+    qc = QualityCheck("null_threshold", dataset)
+    try:
+        with managed_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_schema = %s AND table_name = %s "
+                    "ORDER BY ordinal_position",
+                    (schema, table),
+                )
+                columns = [row[0] for row in cur.fetchall()]
+
+        if not columns:
+            qc.passed = False
+            qc.details = "Sin columnas"
+            return qc
+
+        null_expressions = ", ".join(
+            f'COUNT(*) FILTER (WHERE "{col}" IS NULL) AS "{col}"' for col in columns
+        )
+        query = f'SELECT COUNT(*) AS total, {null_expressions} FROM "{table}"'
+
+        with managed_connection(schema=schema) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query)
+                row = cur.fetchone()
+
+        total = row[0]
+        if total == 0:
+            qc.passed = False
+            qc.details = "Dataset vacío"
+            return qc
+
+        bad_cols = []
+        for i, col in enumerate(columns):
+            null_count = row[i + 1]
+            null_pct = null_count / total * 100
+            if null_pct > threshold:
+                bad_cols.append(f"{col}({null_pct:.1f}%)")
+
+        qc.passed = len(bad_cols) == 0
+        qc.details = (
+            f"Columnas con >{threshold}% nulos: "
+            f"{', '.join(bad_cols) if bad_cols else 'ninguna'}"
+        )
+    except Exception as e:
+        qc.passed = False
+        qc.details = f"Error: {e}"
+    return qc
+
+def _sql_check_column_count(
+    schema: str,
+    table: str,
+    dataset: str,
+    min_cols: int = QUALITY_MIN_COLUMNS,
+) -> QualityCheck:
+    qc = QualityCheck("min_columns", dataset)
+    try:
+        with managed_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema = %s AND table_name = %s",
+                    (schema, table),
+                )
+                col_count = cur.fetchone()[0]
+        qc.passed = col_count >= min_cols
+        qc.details = f"{col_count} columnas (mínimo: {min_cols})"
+    except Exception as e:
+        qc.passed = False
+        qc.details = f"Error: {e}"
+    return qc
 
 def check_not_empty(df: pd.DataFrame, dataset: str) -> QualityCheck:
     qc = QualityCheck("not_empty", dataset)
@@ -48,14 +150,12 @@ def check_not_empty(df: pd.DataFrame, dataset: str) -> QualityCheck:
     qc.details = f"{len(df)} filas"
     return qc
 
-
 def check_no_duplicate_rows(df: pd.DataFrame, dataset: str) -> QualityCheck:
     qc = QualityCheck("no_duplicate_rows", dataset)
     dupes = int(df.duplicated().sum())
     qc.passed = dupes == 0
     qc.details = f"{dupes} filas duplicadas de {len(df)}"
     return qc
-
 
 def check_null_threshold(
     df: pd.DataFrame, dataset: str, threshold: float = QUALITY_NULL_THRESHOLD_PCT
@@ -72,9 +172,11 @@ def check_null_threshold(
         if null_pct > threshold:
             bad_cols.append(f"{col}({null_pct:.1f}%)")
     qc.passed = len(bad_cols) == 0
-    qc.details = f"Columnas con >{threshold}% nulos: {', '.join(bad_cols) if bad_cols else 'ninguna'}"
+    qc.details = (
+        f"Columnas con >{threshold}% nulos: "
+        f"{', '.join(bad_cols) if bad_cols else 'ninguna'}"
+    )
     return qc
-
 
 def check_column_count(
     df: pd.DataFrame, dataset: str, min_cols: int = QUALITY_MIN_COLUMNS
@@ -83,7 +185,6 @@ def check_column_count(
     qc.passed = len(df.columns) >= min_cols
     qc.details = f"{len(df.columns)} columnas (mínimo: {min_cols})"
     return qc
-
 
 def check_schema_consistency(
     dfs: dict[str, pd.DataFrame], category: str
@@ -107,24 +208,19 @@ def check_schema_consistency(
         qc.details += f" ({', '.join(sorted(diff)[:10])})"
     return qc
 
-
-def _load_sqlite_table(table_name: str) -> pd.DataFrame | None:
-    if not SQLITE_DB_PATH.exists():
-        return None
-    conn = sqlite3.connect(SQLITE_DB_PATH)
-    try:
-        tables = [
-            row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        ]
-        if table_name not in tables:
-            return None
-        return pd.read_sql_query(f'SELECT * FROM "{table_name}"', conn)
-    finally:
-        conn.close()
-
+def _run_sql_checks(schema: str, table: str, dataset_name: str) -> list[dict]:
+    results = []
+    checks = [
+        _sql_check_not_empty(schema, table, dataset_name),
+        _sql_check_no_duplicate_rows(schema, table, dataset_name),
+        _sql_check_null_threshold(schema, table, dataset_name),
+        _sql_check_column_count(schema, table, dataset_name),
+    ]
+    for c in checks:
+        status = "OK" if c.passed else "FAIL"
+        logger.info("  [%s] %s: %s — %s", status, c.name, dataset_name, c.details)
+        results.append(c.to_dict())
+    return results
 
 def _run_checks_on_df(df: pd.DataFrame, dataset_name: str) -> list[dict]:
     results = []
@@ -135,30 +231,39 @@ def _run_checks_on_df(df: pd.DataFrame, dataset_name: str) -> list[dict]:
         check_column_count(df, dataset_name),
     ]
     for c in checks:
-        status = "✓" if c.passed else "✗"
-        print(f"  [{status}] {c.name}: {dataset_name} — {c.details}")
+        status = "OK" if c.passed else "FAIL"
+        logger.info("  [%s] %s: %s — %s", status, c.name, dataset_name, c.details)
         results.append(c.to_dict())
     return results
 
-
 def run_quality_checks():
-    from datetime import datetime, timezone
-
-    print("=== PRUEBAS DE CALIDAD ===\n")
+    logger.info("=== PRUEBAS DE CALIDAD (PostgreSQL) ===")
     QUALITY_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     all_results = []
 
-    if SQLITE_DB_PATH.exists():
-        print(f"[SQLite] Leyendo desde {SQLITE_DB_PATH}\n")
+    pg_tables = list_tables(PG_SCHEMA_RAW)
+    has_pg_tables = len(pg_tables) > 0
+
+    if has_pg_tables:
+        logger.info(
+            "[PostgreSQL] Verificando schema '%s' (%d tablas) via SQL directo",
+            PG_SCHEMA_RAW,
+            len(pg_tables),
+        )
         for category in SNIES_CATEGORIES:
-            df = _load_sqlite_table(category)
-            if df is None:
-                print(f"  [SKIP] Tabla '{category}' no encontrada en SQLite")
+            if not table_exists(PG_SCHEMA_RAW, category):
+                logger.info(
+                    "  [SKIP] Tabla '%s' no encontrada en '%s'",
+                    category,
+                    PG_SCHEMA_RAW,
+                )
                 continue
-            dataset_name = f"sqlite/{category}"
-            all_results.extend(_run_checks_on_df(df, dataset_name))
+            dataset_name = f"pg/{PG_SCHEMA_RAW}/{category}"
+            all_results.extend(_run_sql_checks(PG_SCHEMA_RAW, category, dataset_name))
     else:
-        print("[Parquet] SQLite no encontrada, leyendo desde archivos procesados\n")
+        logger.info(
+            "[Parquet] PostgreSQL sin tablas, leyendo desde archivos procesados"
+        )
         snies_dir = PROCESSED_DIR / "snies"
         if snies_dir.exists():
             for category_dir in sorted(snies_dir.iterdir()):
@@ -168,21 +273,38 @@ def run_quality_checks():
                 category_dfs = {}
                 for pq_file in sorted(category_dir.glob("*.parquet")):
                     dataset_name = f"snies/{category}/{pq_file.stem}"
-                    df = pd.read_parquet(pq_file)
-                    category_dfs[pq_file.stem] = df
-                    all_results.extend(_run_checks_on_df(df, dataset_name))
+                    try:
+                        df = pd.read_parquet(pq_file)
+                        category_dfs[pq_file.stem] = df
+                        all_results.extend(_run_checks_on_df(df, dataset_name))
+                    except Exception as e:
+                        logger.warning("Error leyendo %s: %s", pq_file, e)
 
                 if len(category_dfs) >= 2:
                     sc = check_schema_consistency(category_dfs, f"snies/{category}")
-                    status = "✓" if sc.passed else "✗"
-                    print(f"  [{status}] {sc.name}: snies/{category} — {sc.details}")
+                    status = "OK" if sc.passed else "FAIL"
+                    logger.info(
+                        "  [%s] %s: snies/%s — %s",
+                        status,
+                        sc.name,
+                        category,
+                        sc.details,
+                    )
                     all_results.append(sc.to_dict())
 
     for csv_dataset in CSV_DATASETS:
+        table_name = csv_dataset.split("/")[-1]
+        if has_pg_tables and table_exists(PG_SCHEMA_RAW, table_name):
+            dataset_name = f"pg/{PG_SCHEMA_RAW}/{table_name}"
+            all_results.extend(_run_sql_checks(PG_SCHEMA_RAW, table_name, dataset_name))
+            continue
         pq_path = processed_parquet_path(csv_dataset)
         if pq_path.exists():
-            df = pd.read_parquet(pq_path)
-            all_results.extend(_run_checks_on_df(df, csv_dataset))
+            try:
+                df = pd.read_parquet(pq_path)
+                all_results.extend(_run_checks_on_df(df, csv_dataset))
+            except Exception as e:
+                logger.warning("Error leyendo %s: %s", pq_path, e)
 
     report = {
         "run_at": datetime.now(timezone.utc).isoformat(),
@@ -192,11 +314,11 @@ def run_quality_checks():
         "results": all_results,
     }
 
-    QUALITY_REPORT_PATH.write_text(
-        json.dumps(report, indent=2, ensure_ascii=False, cls=NumpyEncoder)
-    )
+    QUALITY_REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False))
 
-    print(
-        f"\n=== CALIDAD: {report['passed']}/{report['total_checks']} pruebas pasaron ==="
+    logger.info(
+        "=== CALIDAD: %d/%d pruebas pasaron ===",
+        report["passed"],
+        report["total_checks"],
     )
     return report

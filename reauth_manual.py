@@ -13,6 +13,7 @@ from config.globals import (
     SCOPES,
 )
 
+
 def step1_get_auth_url():
     params = {
         "client_id": CLIENT_ID,
@@ -48,6 +49,7 @@ def step2_exchange_code(code: str):
     if "error" in data:
         print(f"Error: {data}")
         return
+
     token_data = {
         "token": data["access_token"],
         "refresh_token": data.get("refresh_token", ""),
