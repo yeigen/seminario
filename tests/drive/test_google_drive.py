@@ -14,7 +14,6 @@ from config.globals import (
     build_oauth_client_config,
 )
 
-
 def get_credentials() -> Credentials:
     creds = None
 
@@ -33,7 +32,6 @@ def get_credentials() -> Credentials:
 
     TOKEN_PATH.write_text(creds.to_json())
     return creds
-
 
 def main():
     if not CLIENT_ID or not CLIENT_SECRET:
@@ -65,7 +63,6 @@ def main():
 
     print("\n--- CONEXIÓN EXITOSA ---")
     print(f"Token guardado en: {TOKEN_PATH}")
-
 
 if __name__ == "__main__":
     main()

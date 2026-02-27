@@ -12,7 +12,6 @@ from config.globals import (
     GOOGLE_FOLDER_MIME_TYPE,
 )
 
-
 def get_credentials() -> Credentials:
     creds = None
     if TOKEN_PATH.exists():
@@ -23,7 +22,6 @@ def get_credentials() -> Credentials:
         creds.refresh(Request())
         TOKEN_PATH.write_text(creds.to_json())
     return creds
-
 
 def list_folder(service, folder_id, indent=0):
     query = f"'{folder_id}' in parents and trashed = false"
@@ -47,13 +45,11 @@ def list_folder(service, folder_id, indent=0):
         if f["mimeType"] == GOOGLE_FOLDER_MIME_TYPE:
             list_folder(service, f["id"], indent + 1)
 
-
 def main():
     creds = get_credentials()
     service = build(DRIVE_API_SERVICE, DRIVE_API_VERSION, credentials=creds)
     print(f"Listing files in folder: {FOLDER_ID}\n")
     list_folder(service, FOLDER_ID)
-
 
 if __name__ == "__main__":
     main()

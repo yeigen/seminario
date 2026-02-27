@@ -1,7 +1,6 @@
 import sys
 from pathlib import Path
 
-import google.auth
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -37,9 +36,7 @@ def upload_file(file_path: Path, folder_id: str = None):
     creds = get_credentials()
     service = build("drive", "v3", credentials=creds)
 
-    file_metadata = {
-        "name": file_path.name,
-    }
+    file_metadata = {"name": file_path.name}
     if folder_id:
         file_metadata["parents"] = [folder_id]
 
@@ -55,7 +52,7 @@ def upload_file(file_path: Path, folder_id: str = None):
         .execute()
     )
 
-    print(f"✓ Subido: {file['name']} (ID: {file['id']})")
+    print(f"Subido: {file['name']} (ID: {file['id']})")
     print(f"  Link: {file.get('webViewLink', 'N/A')}")
     return file
 
