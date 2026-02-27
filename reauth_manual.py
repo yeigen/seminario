@@ -1,29 +1,28 @@
-import os
 import json
 import sys
-from pathlib import Path
 from urllib.parse import urlencode
-from dotenv import load_dotenv
 
-load_dotenv()
-
-TOKEN_PATH = Path(__file__).parent / "token.json"
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
-REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-
+from config.globals import (
+    TOKEN_PATH,
+    CLIENT_ID,
+    CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI_OOB,
+    GOOGLE_AUTH_URI,
+    GOOGLE_TOKEN_URI,
+    GOOGLE_UNIVERSE_DOMAIN,
+    SCOPES,
+)
 
 def step1_get_auth_url():
     params = {
         "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": GOOGLE_REDIRECT_URI_OOB,
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",
         "prompt": "consent",
     }
-    url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
+    url = f"{GOOGLE_AUTH_URI}?{urlencode(params)}"
     print("Abre esta URL en tu navegador y autoriza la app:")
     print()
     print(url)
@@ -36,12 +35,12 @@ def step2_exchange_code(code: str):
     import requests
 
     response = requests.post(
-        "https://oauth2.googleapis.com/token",
+        GOOGLE_TOKEN_URI,
         data={
             "code": code,
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": GOOGLE_REDIRECT_URI_OOB,
             "grant_type": "authorization_code",
         },
     )
@@ -52,11 +51,11 @@ def step2_exchange_code(code: str):
     token_data = {
         "token": data["access_token"],
         "refresh_token": data.get("refresh_token", ""),
-        "token_uri": "https://oauth2.googleapis.com/token",
+        "token_uri": GOOGLE_TOKEN_URI,
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
         "scopes": SCOPES,
-        "universe_domain": "googleapis.com",
+        "universe_domain": GOOGLE_UNIVERSE_DOMAIN,
         "account": "",
     }
     TOKEN_PATH.write_text(json.dumps(token_data))

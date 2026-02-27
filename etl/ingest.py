@@ -1,27 +1,29 @@
 import io
-import os
 import json
 import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
 
-from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
-load_dotenv()
-
-TOKEN_PATH = Path(__file__).parents[1] / "token.json"
-RAW_DATA_DIR = Path(__file__).parents[1] / "data" / "raw"
-MANIFEST_PATH = RAW_DATA_DIR / "_manifest.json"
-
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+from config.globals import (
+    TOKEN_PATH,
+    RAW_DATA_DIR,
+    MANIFEST_PATH,
+    SCOPES,
+    HASH_CHUNK_SIZE,
+    MAX_SNIES_FILE_SIZE_MB,
+    DRIVE_API_SERVICE,
+    DRIVE_API_VERSION,
+    DATASET_PND,
+    DATASET_ICFES_SABER,
+    build_oauth_client_config,
+    raw_csv_path,
+)
 
 
 def get_credentials():
@@ -34,15 +36,7 @@ def get_credentials():
         creds.refresh(Request())
         TOKEN_PATH.write_text(creds.to_json())
         return creds
-    client_config = {
-        "installed": {
-            "client_id": CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": ["http://localhost"],
-        }
-    }
+    client_config = build_oauth_client_config()
     flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
     creds = flow.run_local_server(port=0)
     TOKEN_PATH.write_text(creds.to_json())
@@ -51,13 +45,13 @@ def get_credentials():
 
 def build_drive_service():
     creds = get_credentials()
-    return build("drive", "v3", credentials=creds)
+    return build(DRIVE_API_SERVICE, DRIVE_API_VERSION, credentials=creds)
 
 
 def file_md5(path: Path) -> str:
     h = hashlib.md5()
     with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
+        for chunk in iter(lambda: f.read(HASH_CHUNK_SIZE), b""):
             h.update(chunk)
     return h.hexdigest()
 
@@ -102,7 +96,9 @@ def get_file_size(service, file_id: str) -> int:
         return 0
 
 
-def ingest_snies(service, sources: dict, manifest: dict, max_size_mb: float = 15.0):
+def ingest_snies(
+    service, sources: dict, manifest: dict, max_size_mb: float = MAX_SNIES_FILE_SIZE_MB
+):
     snies_config = sources["snies"]
     for category, years in snies_config.items():
         for year, file_id in years.items():
@@ -136,7 +132,7 @@ def ingest_csv_file(service, file_id: str, dest_path: Path, key: str, manifest: 
     return manifest
 
 
-def ingest_all(sources: dict, max_snies_size_mb: float = 15.0):
+def ingest_all(sources: dict, max_snies_size_mb: float = MAX_SNIES_FILE_SIZE_MB):
     print("=== INGESTIÓN DE DATOS DESDE GOOGLE DRIVE ===\n")
     service = build_drive_service()
     manifest = load_manifest()
@@ -145,19 +141,23 @@ def ingest_all(sources: dict, max_snies_size_mb: float = 15.0):
     manifest = ingest_snies(service, sources, manifest, max_snies_size_mb)
 
     print("\n[2/3] Descargando Seguimiento PND...")
-    pnd_dest = RAW_DATA_DIR / "pnd" / "seguimiento_pnd.csv"
+    pnd_dest = raw_csv_path(DATASET_PND)
     manifest = ingest_csv_file(
         service,
         sources["pnd"]["seguimiento_pnd"],
         pnd_dest,
-        "pnd/seguimiento_pnd",
+        DATASET_PND,
         manifest,
     )
 
     print("\n[3/3] Descargando Saber 3-5-9...")
-    saber_dest = RAW_DATA_DIR / "icfes" / "saber_359.csv"
+    saber_dest = raw_csv_path(DATASET_ICFES_SABER)
     manifest = ingest_csv_file(
-        service, sources["icfes"]["saber_359"], saber_dest, "icfes/saber_359", manifest
+        service,
+        sources["icfes"]["saber_359"],
+        saber_dest,
+        DATASET_ICFES_SABER,
+        manifest,
     )
 
     print(f"\n=== INGESTIÓN COMPLETA: {len(manifest)} archivos ===")

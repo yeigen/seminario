@@ -5,5 +5,10 @@ token.json
 *.pyc
 __pycache__/
 
-# uv
-.python-version
+# Datos (archivos grandes, se generan localmente)
+data/
+*.sqlite
+*.db
+
+# Logs
+logs/*.log

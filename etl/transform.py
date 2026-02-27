@@ -4,9 +4,18 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-RAW_DIR = Path(__file__).parents[1] / "data" / "raw"
-PROCESSED_DIR = Path(__file__).parents[1] / "data" / "processed"
-LINEAGE_PATH = PROCESSED_DIR / "_lineage.json"
+from config.globals import (
+    RAW_DATA_DIR,
+    PROCESSED_DIR,
+    LINEAGE_PATH,
+    PROCESSED_SNIES_DIR,
+    CSV_ENCODINGS,
+    CSV_DATASETS,
+    OUTPUT_EXTENSION,
+    raw_csv_path,
+    processed_parquet_path,
+)
+
 
 def load_lineage() -> list:
     if LINEAGE_PATH.exists():
@@ -86,7 +95,7 @@ def clean_snies_file(path: Path, category: str, year: str) -> pd.DataFrame | Non
     df = drop_empty_rows(df)
     df = standardize_year_column(df, int(year))
 
-    dest = PROCESSED_DIR / "snies" / category / f"{category}-{year}.parquet"
+    dest = PROCESSED_SNIES_DIR / category / f"{category}-{year}{OUTPUT_EXTENSION}"
     dest.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(dest, index=False)
 
@@ -103,7 +112,7 @@ def clean_snies_file(path: Path, category: str, year: str) -> pd.DataFrame | Non
 
 def clean_csv_file(path: Path, dest_name: str, sep: str = ",") -> pd.DataFrame | None:
     try:
-        for encoding in ["utf-8", "latin-1", "cp1252"]:
+        for encoding in CSV_ENCODINGS:
             try:
                 df = pd.read_csv(path, sep=sep, encoding=encoding, low_memory=False)
                 break
@@ -121,7 +130,7 @@ def clean_csv_file(path: Path, dest_name: str, sep: str = ",") -> pd.DataFrame |
     df = clean_text_columns(df)
     df = drop_empty_rows(df)
 
-    dest = PROCESSED_DIR / f"{dest_name}.parquet"
+    dest = processed_parquet_path(dest_name)
     dest.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(dest, index=False)
 
@@ -137,7 +146,7 @@ def transform_all():
     results = {}
 
     print("[1/3] Limpiando SNIES...")
-    snies_dir = RAW_DIR / "snies"
+    snies_dir = RAW_DATA_DIR / "snies"
     if snies_dir.exists():
         for category_dir in sorted(snies_dir.iterdir()):
             if not category_dir.is_dir():
@@ -155,22 +164,22 @@ def transform_all():
                     }
 
     print("\n[2/3] Limpiando Seguimiento PND...")
-    pnd_path = RAW_DIR / "pnd" / "seguimiento_pnd.csv"
+    pnd_path = raw_csv_path(CSV_DATASETS[0])
     if pnd_path.exists():
-        df = clean_csv_file(pnd_path, "pnd/seguimiento_pnd")
+        df = clean_csv_file(pnd_path, CSV_DATASETS[0])
         if df is not None:
-            results["pnd/seguimiento_pnd"] = {
+            results[CSV_DATASETS[0]] = {
                 "rows": len(df),
                 "cols": len(df.columns),
                 "columns": list(df.columns),
             }
 
     print("\n[3/3] Limpiando Saber 3-5-9...")
-    saber_path = RAW_DIR / "icfes" / "saber_359.csv"
+    saber_path = raw_csv_path(CSV_DATASETS[1])
     if saber_path.exists():
-        df = clean_csv_file(saber_path, "icfes/saber_359", sep=",")
+        df = clean_csv_file(saber_path, CSV_DATASETS[1], sep=",")
         if df is not None:
-            results["icfes/saber_359"] = {
+            results[CSV_DATASETS[1]] = {
                 "rows": len(df),
                 "cols": len(df.columns),
                 "columns": list(df.columns),

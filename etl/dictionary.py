@@ -1,11 +1,14 @@
 import json
-from pathlib import Path
 
 import pandas as pd
 
-PROCESSED_DIR = Path(__file__).parents[1] / "data" / "processed"
-DICT_DIR = Path(__file__).parents[1] / "data" / "dictionaries"
-
+from config.globals import (
+    PROCESSED_DIR,
+    DICTIONARIES_DIR,
+    DATA_DICTIONARY_JSON_PATH,
+    DATA_DICTIONARY_MD_PATH,
+    PROJECT_TITLE,
+)
 
 def profile_column(series: pd.Series) -> dict:
     total = len(series)
@@ -39,7 +42,7 @@ def profile_column(series: pd.Series) -> dict:
     return profile
 
 
-def generate_dictionary_for_dataset(parquet_path: Path) -> dict:
+def generate_dictionary_for_dataset(parquet_path) -> dict:
     df = pd.read_parquet(parquet_path)
     dataset_name = parquet_path.stem
     columns = {}
@@ -56,7 +59,7 @@ def generate_dictionary_for_dataset(parquet_path: Path) -> dict:
 
 def generate_all_dictionaries():
     print("=== GENERANDO DICCIONARIO DE DATOS ===\n")
-    DICT_DIR.mkdir(parents=True, exist_ok=True)
+    DICTIONARIES_DIR.mkdir(parents=True, exist_ok=True)
     all_dicts = {}
 
     for parquet_file in sorted(PROCESSED_DIR.rglob("*.parquet")):
@@ -69,8 +72,7 @@ def generate_all_dictionaries():
         except Exception as e:
             print(f"  [ERROR] {parquet_file}: {e}")
 
-    dict_path = DICT_DIR / "data_dictionary.json"
-    dict_path.write_text(
+    DATA_DICTIONARY_JSON_PATH.write_text(
         json.dumps(all_dicts, indent=2, ensure_ascii=False, default=str)
     )
 
@@ -81,8 +83,7 @@ def generate_all_dictionaries():
 
 
 def _generate_markdown_dictionary(all_dicts: dict):
-    md_path = DICT_DIR / "data_dictionary.md"
-    lines = ["# Diccionario de Datos - Seminario Ingeniería de Datos\n"]
+    lines = [f"# Diccionario de Datos - {PROJECT_TITLE}\n"]
 
     for key, info in sorted(all_dicts.items()):
         lines.append(f"## {info['dataset']}")
@@ -104,4 +105,4 @@ def _generate_markdown_dictionary(all_dicts: dict):
             )
         lines.append("")
 
-    md_path.write_text("\n".join(lines))
+    DATA_DICTIONARY_MD_PATH.write_text("\n".join(lines))

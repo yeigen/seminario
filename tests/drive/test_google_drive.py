@@ -1,26 +1,25 @@
-import os
 import sys
-from pathlib import Path
-from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-load_dotenv()
-
-SCOPES = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
-TOKEN_PATH = Path(__file__).parent / "token.json"
-
-CLIENT_ID = os.getenv("CLIENT_ID")
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+from config.globals import (
+    SCOPES_METADATA,
+    TOKEN_PATH,
+    CLIENT_ID,
+    CLIENT_SECRET,
+    DRIVE_API_SERVICE,
+    DRIVE_API_VERSION,
+    build_oauth_client_config,
+)
 
 
 def get_credentials() -> Credentials:
     creds = None
 
     if TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES_METADATA)
 
     if creds and creds.valid:
         return creds
@@ -28,16 +27,8 @@ def get_credentials() -> Credentials:
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
     else:
-        client_config = {
-            "installed": {
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": ["http://localhost"],
-            }
-        }
-        flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+        client_config = build_oauth_client_config()
+        flow = InstalledAppFlow.from_client_config(client_config, SCOPES_METADATA)
         creds = flow.run_local_server(port=0)
 
     TOKEN_PATH.write_text(creds.to_json())
@@ -58,7 +49,7 @@ def main():
     print("Autenticando con Google Drive API...")
     creds = get_credentials()
 
-    service = build("drive", "v3", credentials=creds)
+    service = build(DRIVE_API_SERVICE, DRIVE_API_VERSION, credentials=creds)
 
     print("Listando los primeros 5 archivos en Drive:\n")
     results = (

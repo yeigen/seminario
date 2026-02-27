@@ -1,9 +1,12 @@
-FOLDER_ID = "1tcRwkHfaMpu2TUoNgU_GU8SwUGz9WBGK"
-
-SNIES_FOLDER_ID = "1ti0l0DsQm3ct8IE37OhMEwRJI2vY-WRE"
-MATRICULA_TOTAL_FOLDER_ID = "1fTj8K_or6h5rYICnFbcdeB2x0DjWksc-"
-ICFES_FOLDER_ID = "17ZdyGTKGF-7lqYt5U41Wsb4j0C7XUsjW"
-PND_FOLDER_ID = "1dDAr1pTdVX3swGKC5G5rNSqTKW1JT8G7"
+from config.globals import (
+    FOLDER_ID,
+    SNIES_FOLDER_ID,
+    MATRICULA_TOTAL_FOLDER_ID,
+    ICFES_FOLDER_ID,
+    PND_FOLDER_ID,
+    SCOPES,
+    MIME_TYPE_EXTENSIONS,
+)
 
 PRIORITY_FILES = {
     "snies": {
@@ -80,13 +83,4 @@ PRIORITY_FILES = {
     "pnd": {
         "seguimiento_pnd": "1M9XggkKlsvWSt8BWvFSONGaLUTbJrRy8",
     },
-}
-
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
-
-FILE_EXTENSIONS = {
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-    "text/csv": ".csv",
-    "text/plain": ".txt",
-    "application/json": ".json",
 }

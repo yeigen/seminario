@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
+from config.globals import MAX_SNIES_FILE_SIZE_MB
 from config.sources import PRIORITY_FILES
 from etl.ingest import ingest_all
 from etl.transform import transform_all
@@ -17,7 +18,7 @@ def run_pipeline(skip_ingest: bool = False):
     print()
 
     if not skip_ingest:
-        ingest_all(PRIORITY_FILES, max_snies_size_mb=15.0)
+        ingest_all(PRIORITY_FILES, max_snies_size_mb=MAX_SNIES_FILE_SIZE_MB)
         print()
 
     transform_all()
@@ -32,7 +33,6 @@ def run_pipeline(skip_ingest: bool = False):
     print("=" * 60)
     print("  PIPELINE COMPLETO")
     print("=" * 60)
-
 
 if __name__ == "__main__":
     skip = "--skip-ingest" in sys.argv

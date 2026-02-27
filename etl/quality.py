@@ -1,12 +1,17 @@
 import json
-from pathlib import Path
 from datetime import datetime, timezone
 
 import pandas as pd
 
-PROCESSED_DIR = Path(__file__).parents[1] / "data" / "processed"
-REPORTS_DIR = Path(__file__).parents[1] / "data" / "processed" / "_quality_reports"
-
+from config.globals import (
+    PROCESSED_DIR,
+    QUALITY_REPORTS_DIR,
+    QUALITY_REPORT_PATH,
+    QUALITY_NULL_THRESHOLD_PCT,
+    QUALITY_MIN_COLUMNS,
+    CSV_DATASETS,
+    processed_parquet_path,
+)
 
 class QualityCheck:
     def __init__(self, name: str, dataset: str):
@@ -40,7 +45,7 @@ def check_no_duplicate_rows(df: pd.DataFrame, dataset: str) -> QualityCheck:
 
 
 def check_null_threshold(
-    df: pd.DataFrame, dataset: str, threshold: float = 50.0
+    df: pd.DataFrame, dataset: str, threshold: float = QUALITY_NULL_THRESHOLD_PCT
 ) -> QualityCheck:
     qc = QualityCheck("null_threshold", dataset)
     total = len(df)
@@ -59,7 +64,7 @@ def check_null_threshold(
 
 
 def check_column_count(
-    df: pd.DataFrame, dataset: str, min_cols: int = 2
+    df: pd.DataFrame, dataset: str, min_cols: int = QUALITY_MIN_COLUMNS
 ) -> QualityCheck:
     qc = QualityCheck("min_columns", dataset)
     qc.passed = len(df.columns) >= min_cols
@@ -92,7 +97,7 @@ def check_schema_consistency(
 
 def run_quality_checks():
     print("=== PRUEBAS DE CALIDAD ===\n")
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    QUALITY_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     all_results = []
 
     snies_dir = PROCESSED_DIR / "snies"
@@ -124,8 +129,8 @@ def run_quality_checks():
                 print(f"  [{status}] {sc.name}: snies/{category} — {sc.details}")
                 all_results.append(sc.to_dict())
 
-    for csv_dataset in ["pnd/seguimiento_pnd", "icfes/saber_359"]:
-        pq_path = PROCESSED_DIR / f"{csv_dataset}.parquet"
+    for csv_dataset in CSV_DATASETS:
+        pq_path = processed_parquet_path(csv_dataset)
         if pq_path.exists():
             df = pd.read_parquet(pq_path)
             checks = [
@@ -147,8 +152,7 @@ def run_quality_checks():
         "results": all_results,
     }
 
-    report_path = REPORTS_DIR / "quality_report.json"
-    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    QUALITY_REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False))
 
     print(
         f"\n=== CALIDAD: {report['passed']}/{report['total_checks']} pruebas pasaron ==="
