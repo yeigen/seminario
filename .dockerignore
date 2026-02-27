@@ -1,0 +1,55 @@
+# ============================================================
+# .dockerignore — Seminario Ingeniería de Datos
+#
+# Excluye archivos que no deben incluirse en el build context
+# para reducir el tamaño del contexto y la imagen final.
+# ============================================================
+
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+
+# Entorno virtual (se recrea en el contenedor)
+.venv
+
+# Datos (se montan como volúmenes)
+data/
+*.db
+*.sqlite
+
+# Logs (se montan como volúmenes)
+logs/
+
+# Archivos sensibles
+.env
+token.json
+
+# IDE y herramientas
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker (evitar recursión)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Airflow (configuración separada)
+airflow/
+
+# Documentación y archivos no necesarios en runtime
+docs/
+*.md
+LICENSE
