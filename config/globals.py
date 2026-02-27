@@ -30,6 +30,8 @@ RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 DICTIONARIES_DIR = DATA_DIR / "dictionaries"
 SQLITE_DB_PATH = DATA_DIR / "seminario.db"
+SQLITE_UNIFIED_DB_PATH = DATA_DIR / "seminario_unified.db"
+SQLITE_FACTS_DB_PATH = DATA_DIR / "seminario_facts.db"
 
 # Subdirectorios de datos crudos
 RAW_SNIES_DIR = RAW_DATA_DIR / "snies"
@@ -70,6 +72,9 @@ GOOGLE_UNIVERSE_DOMAIN = "googleapis.com"
 SCOPES_READONLY = ["https://www.googleapis.com/auth/drive.readonly"]
 SCOPES_METADATA = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
 
+# Scope de escritura para upload
+SCOPES_READWRITE = ["https://www.googleapis.com/auth/drive"]
+
 # Scope por defecto para el pipeline ETL
 SCOPES = SCOPES_READONLY
 
@@ -102,6 +107,16 @@ SNIES_FOLDER_ID = "1ti0l0DsQm3ct8IE37OhMEwRJI2vY-WRE"
 MATRICULA_TOTAL_FOLDER_ID = "1fTj8K_or6h5rYICnFbcdeB2x0DjWksc-"
 ICFES_FOLDER_ID = "17ZdyGTKGF-7lqYt5U41Wsb4j0C7XUsjW"
 PND_FOLDER_ID = "1dDAr1pTdVX3swGKC5G5rNSqTKW1JT8G7"
+
+# Carpeta destino para upload de bases de datos procesadas
+DRIVE_UPLOAD_FOLDER_ID: str = os.getenv("DRIVE_UPLOAD_FOLDER_ID", FOLDER_ID)
+
+# Bases de datos que se suben a Google Drive
+SQLITE_DB_FILES: list[Path] = [
+    SQLITE_DB_PATH,
+    SQLITE_UNIFIED_DB_PATH,
+    SQLITE_FACTS_DB_PATH,
+]
 
 # ──────────────────────────────────────────────────────────────
 # 5. DATASETS — Claves lógicas usadas en el pipeline

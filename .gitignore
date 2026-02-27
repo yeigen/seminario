@@ -1,6 +1,5 @@
 .env
 token.json
-.venv/
 .ruff_cache/
 *.pyc
 __pycache__/
