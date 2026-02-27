@@ -1,0 +1,133 @@
+# ============================================================
+# docker-compose.yml — Seminario Ingeniería de Datos
+#
+# Servicios:
+#   - postgres:   Base de datos PostgreSQL
+#   - pipeline:   Ejecuta el ETL completo
+#   - dashboard:  Streamlit UI (puerto 8501)
+#
+# Uso:
+#   docker compose up pipeline        # solo ETL
+#   docker compose up dashboard       # solo dashboard
+#   docker compose up                 # todo
+#   docker compose run pipeline python -m etl.pipeline --skip-ingest
+# ============================================================
+
+services:
+  # ── PostgreSQL (pipeline ETL, puerto host 5433) ────────────
+  # NOTA: Airflow usa una instancia separada en airflow/docker-compose.yaml
+  #       con puerto host 5434 para evitar conflictos.
+  postgres:
+    image: postgres:16-alpine
+    container_name: seminario-postgres
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yeigen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-LavidaEsbella16*#}
+      POSTGRES_DB: ${POSTGRES_DB:-seminario}
+    command:
+      - postgres
+      - "-c"
+      - "max_wal_size=1GB"
+      - "-c"
+      - "min_wal_size=512MB"
+      - "-c"
+      - "checkpoint_timeout=30min"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yeigen -d seminario"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ── Pipeline ETL ───────────────────────────────────────────
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: seminario-pipeline
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_HOST=postgres
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./token.json:/app/token.json:ro
+    command: ["sleep", "infinity"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Dashboard Streamlit ────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: seminario-dashboard
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_HOST=postgres
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data:ro
+      - ./logs:/app/logs:ro
+    command: >
+      streamlit run dashboard/app.py
+        --server.port=8501
+        --server.address=0.0.0.0
+        --server.headless=true
+    restart: unless-stopped
+    depends_on:
+      pipeline:
+        condition: service_completed_successfully
+
+  # ── Desarrollo (monta código fuente) ───────────────────────
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: seminario-dev
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - POSTGRES_HOST=postgres
+    volumes:
+      - ./config:/app/config
+      - ./etl:/app/etl
+      - ./scripts:/app/scripts
+      - ./utils:/app/utils
+      - ./dashboard:/app/dashboard
+      - ./main.py:/app/main.py
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./token.json:/app/token.json:ro
+    ports:
+      - "8501:8501"
+    command: ["sleep", "infinity"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - dev
+
+volumes:
+  pgdata:
+
+# ── Redes ──────────────────────────────────────────────────────
+# Red explícita para que Airflow pueda conectarse vía external: true
+networks:
+  default:
+    name: seminario_default
+    driver: bridge
