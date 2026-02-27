@@ -1,4 +1,9 @@
 .env
 token.json
-venv/
+.venv/
 .ruff_cache/
+*.pyc
+__pycache__/
+
+# uv
+.python-version
