@@ -62,6 +62,18 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def drop_junk_columns(df: pd.DataFrame) -> pd.DataFrame:
+    unnamed = [c for c in df.columns if c.startswith("unnamed")]
+    if unnamed:
+        df = df.drop(columns=unnamed)
+
+    full_null = [c for c in df.columns if df[c].isna().all()]
+    if full_null:
+        df = df.drop(columns=full_null)
+
+    return df
+
+
 def clean_text_columns(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.select_dtypes(include=["object"]).columns:
         df[col] = df[col].str.strip()
@@ -91,6 +103,7 @@ def clean_snies_file(path: Path, category: str, year: str) -> pd.DataFrame | Non
 
     rows_in = len(df)
     df = normalize_columns(df)
+    df = drop_junk_columns(df)
     df = clean_text_columns(df)
     df = drop_empty_rows(df)
     df = standardize_year_column(df, int(year))
@@ -127,6 +140,7 @@ def clean_csv_file(path: Path, dest_name: str, sep: str = ",") -> pd.DataFrame |
 
     rows_in = len(df)
     df = normalize_columns(df)
+    df = drop_junk_columns(df)
     df = clean_text_columns(df)
     df = drop_empty_rows(df)
 

@@ -1,6 +1,7 @@
 import json
-from datetime import datetime, timezone
+import sqlite3
 
+import numpy as np
 import pandas as pd
 
 from config.globals import (
@@ -10,8 +11,20 @@ from config.globals import (
     QUALITY_NULL_THRESHOLD_PCT,
     QUALITY_MIN_COLUMNS,
     CSV_DATASETS,
+    SQLITE_DB_PATH,
+    SNIES_CATEGORIES,
     processed_parquet_path,
 )
+
+
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, (np.bool_, np.generic)):
+            return o.item()
+        if isinstance(o, np.ndarray):
+            return o.tolist()
+        return super().default(o)
+
 
 class QualityCheck:
     def __init__(self, name: str, dataset: str):
@@ -24,7 +37,7 @@ class QualityCheck:
         return {
             "check": self.name,
             "dataset": self.dataset,
-            "passed": self.passed,
+            "passed": bool(self.passed),
             "details": self.details,
         }
 
@@ -38,7 +51,7 @@ def check_not_empty(df: pd.DataFrame, dataset: str) -> QualityCheck:
 
 def check_no_duplicate_rows(df: pd.DataFrame, dataset: str) -> QualityCheck:
     qc = QualityCheck("no_duplicate_rows", dataset)
-    dupes = df.duplicated().sum()
+    dupes = int(df.duplicated().sum())
     qc.passed = dupes == 0
     qc.details = f"{dupes} filas duplicadas de {len(df)}"
     return qc
@@ -95,54 +108,81 @@ def check_schema_consistency(
     return qc
 
 
+def _load_sqlite_table(table_name: str) -> pd.DataFrame | None:
+    if not SQLITE_DB_PATH.exists():
+        return None
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    try:
+        tables = [
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        ]
+        if table_name not in tables:
+            return None
+        return pd.read_sql_query(f'SELECT * FROM "{table_name}"', conn)
+    finally:
+        conn.close()
+
+
+def _run_checks_on_df(df: pd.DataFrame, dataset_name: str) -> list[dict]:
+    results = []
+    checks = [
+        check_not_empty(df, dataset_name),
+        check_no_duplicate_rows(df, dataset_name),
+        check_null_threshold(df, dataset_name),
+        check_column_count(df, dataset_name),
+    ]
+    for c in checks:
+        status = "✓" if c.passed else "✗"
+        print(f"  [{status}] {c.name}: {dataset_name} — {c.details}")
+        results.append(c.to_dict())
+    return results
+
+
 def run_quality_checks():
+    from datetime import datetime, timezone
+
     print("=== PRUEBAS DE CALIDAD ===\n")
     QUALITY_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     all_results = []
 
-    snies_dir = PROCESSED_DIR / "snies"
-    if snies_dir.exists():
-        for category_dir in sorted(snies_dir.iterdir()):
-            if not category_dir.is_dir():
+    if SQLITE_DB_PATH.exists():
+        print(f"[SQLite] Leyendo desde {SQLITE_DB_PATH}\n")
+        for category in SNIES_CATEGORIES:
+            df = _load_sqlite_table(category)
+            if df is None:
+                print(f"  [SKIP] Tabla '{category}' no encontrada en SQLite")
                 continue
-            category = category_dir.name
-            category_dfs = {}
-            for pq_file in sorted(category_dir.glob("*.parquet")):
-                dataset_name = f"snies/{category}/{pq_file.stem}"
-                df = pd.read_parquet(pq_file)
-                category_dfs[pq_file.stem] = df
+            dataset_name = f"sqlite/{category}"
+            all_results.extend(_run_checks_on_df(df, dataset_name))
+    else:
+        print("[Parquet] SQLite no encontrada, leyendo desde archivos procesados\n")
+        snies_dir = PROCESSED_DIR / "snies"
+        if snies_dir.exists():
+            for category_dir in sorted(snies_dir.iterdir()):
+                if not category_dir.is_dir():
+                    continue
+                category = category_dir.name
+                category_dfs = {}
+                for pq_file in sorted(category_dir.glob("*.parquet")):
+                    dataset_name = f"snies/{category}/{pq_file.stem}"
+                    df = pd.read_parquet(pq_file)
+                    category_dfs[pq_file.stem] = df
+                    all_results.extend(_run_checks_on_df(df, dataset_name))
 
-                checks = [
-                    check_not_empty(df, dataset_name),
-                    check_no_duplicate_rows(df, dataset_name),
-                    check_null_threshold(df, dataset_name),
-                    check_column_count(df, dataset_name),
-                ]
-                for c in checks:
-                    status = "✓" if c.passed else "✗"
-                    print(f"  [{status}] {c.name}: {dataset_name} — {c.details}")
-                    all_results.append(c.to_dict())
-
-            if len(category_dfs) >= 2:
-                sc = check_schema_consistency(category_dfs, f"snies/{category}")
-                status = "✓" if sc.passed else "✗"
-                print(f"  [{status}] {sc.name}: snies/{category} — {sc.details}")
-                all_results.append(sc.to_dict())
+                if len(category_dfs) >= 2:
+                    sc = check_schema_consistency(category_dfs, f"snies/{category}")
+                    status = "✓" if sc.passed else "✗"
+                    print(f"  [{status}] {sc.name}: snies/{category} — {sc.details}")
+                    all_results.append(sc.to_dict())
 
     for csv_dataset in CSV_DATASETS:
         pq_path = processed_parquet_path(csv_dataset)
         if pq_path.exists():
             df = pd.read_parquet(pq_path)
-            checks = [
-                check_not_empty(df, csv_dataset),
-                check_no_duplicate_rows(df, csv_dataset),
-                check_null_threshold(df, csv_dataset),
-                check_column_count(df, csv_dataset),
-            ]
-            for c in checks:
-                status = "✓" if c.passed else "✗"
-                print(f"  [{status}] {c.name}: {csv_dataset} — {c.details}")
-                all_results.append(c.to_dict())
+            all_results.extend(_run_checks_on_df(df, csv_dataset))
 
     report = {
         "run_at": datetime.now(timezone.utc).isoformat(),
@@ -152,7 +192,9 @@ def run_quality_checks():
         "results": all_results,
     }
 
-    QUALITY_REPORT_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    QUALITY_REPORT_PATH.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False, cls=NumpyEncoder)
+    )
 
     print(
         f"\n=== CALIDAD: {report['passed']}/{report['total_checks']} pruebas pasaron ==="
