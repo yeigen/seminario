@@ -41,6 +41,7 @@ st.set_page_config(
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+
 def _load_json(path: Path) -> dict | None:
     if path.exists():
         with open(path, encoding="utf-8") as f:
@@ -86,21 +87,34 @@ with st.sidebar:
         with st.spinner("Ejecutando pipeline de análisis… (puede tomar ~2 min)"):
             try:
                 from analysis.runner import run
+
                 run()
                 st.success("Análisis completado. Recarga la página.")
             except Exception as e:
                 st.error(f"Error: {e}")
 
 
+def _fmt(v: object) -> str:
+    """Formatea un número como entero con separador de miles, o 'N/A' si es None."""
+    if v is None or (isinstance(v, float) and v != v):  # None o NaN
+        return "N/A"
+    try:
+        return f"{v:,.0f}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
 # ── tabs ─────────────────────────────────────────────────────────────────────
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📈 Tendencias",
-    "📉 ITS",
-    "⚖️ DiD",
-    "🔁 Bootstrap",
-    "📋 Resumen ejecutivo",
-])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    [
+        "📈 Tendencias",
+        "📉 ITS",
+        "⚖️ DiD",
+        "🔁 Bootstrap",
+        "📋 Resumen ejecutivo",
+    ]
+)
 
 # ────────────────────────────────────────────────────────────────────────────
 # TAB 1: TENDENCIAS
@@ -113,29 +127,40 @@ with tab1:
     df_resumen = _load_csv(RESULTS_DIR / f"resumen_pre_post_{tipo_evento}.csv")
 
     if df_tend is None:
-        st.info("Ejecuta el análisis desde el botón en la barra lateral para generar los resultados.")
+        st.info(
+            "Ejecuta el análisis desde el botón en la barra lateral para generar los resultados."
+        )
     else:
         # Serie temporal
         fig = go.Figure()
         for sector, color in [("Oficial", "#1f77b4"), ("Privada", "#ff7f0e")]:
             sub = df_tend[df_tend["sector_ies"] == sector].sort_values("t")
-            fig.add_trace(go.Scatter(
-                x=sub["periodo"], y=sub["total"],
-                mode="lines+markers", name=sector,
-                line=dict(color=color, width=2.5), marker=dict(size=8),
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=sub["periodo"],
+                    y=sub["total"],
+                    mode="lines+markers",
+                    name=sector,
+                    line=dict(color=color, width=2.5),
+                    marker=dict(size=8),
+                )
+            )
         periodos = sorted(df_tend["periodo"].unique().tolist())
         if "2022-S2" in periodos:
             fig.add_vline(
                 x=periodos.index("2022-S2"),
-                line_dash="dash", line_color="red",
+                line_dash="dash",
+                line_color="red",
                 annotation_text="Inicio Gobierno Petro (2022-S2)",
                 annotation_position="top right",
             )
         fig.update_layout(
             title=f"{tipo_evento.replace('_', ' ').title()} por sector IES — Colombia 2018–2024",
-            xaxis_title="Semestre", yaxis_title="Estudiantes",
-            hovermode="x unified", template="plotly_white", height=430,
+            xaxis_title="Semestre",
+            yaxis_title="Estudiantes",
+            hovermode="x unified",
+            template="plotly_white",
+            height=430,
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -157,9 +182,17 @@ with tab1:
             st.subheader("Variación % anual")
             fig_var = go.Figure()
             for sector, color in [("Oficial", "#1f77b4"), ("Privada", "#ff7f0e")]:
-                sub = df_tend[(df_tend["sector_ies"] == sector) & df_tend["var_pct_anual"].notna()]
-                fig_var.add_trace(go.Bar(x=sub["periodo"], y=sub["var_pct_anual"].round(2),
-                                         name=sector, marker_color=color))
+                sub = df_tend[
+                    (df_tend["sector_ies"] == sector) & df_tend["var_pct_anual"].notna()
+                ]
+                fig_var.add_trace(
+                    go.Bar(
+                        x=sub["periodo"],
+                        y=sub["var_pct_anual"].round(2),
+                        name=sector,
+                        marker_color=color,
+                    )
+                )
             fig_var.add_hline(y=0, line_color="black", line_width=1)
             fig_var.update_layout(barmode="group", template="plotly_white", height=380)
             st.plotly_chart(fig_var, use_container_width=True)
@@ -177,7 +210,9 @@ with tab2:
     )
 
     its_json = _load_json(RESULTS_DIR / f"its_{sector_sel.lower()}_{tipo_evento}.json")
-    df_its = _load_csv(RESULTS_DIR / f"its_datos_{sector_sel.lower()}_{tipo_evento}.csv")
+    df_its = _load_csv(
+        RESULTS_DIR / f"its_datos_{sector_sel.lower()}_{tipo_evento}.csv"
+    )
 
     if its_json is None:
         st.info("Sin resultados ITS aún. Ejecuta el análisis.")
@@ -191,13 +226,30 @@ with tab2:
         a2 = coefs.get("alpha_2_cambio_nivel", {})
         a3 = coefs.get("alpha_3_cambio_tendencia", {})
         with c1:
-            st.metric("α₂ — Cambio de nivel", f"{a2.get('estimado', 'N/A'):,.0f}",
-                      delta=_badge(a2.get("p_value", 1) < 0.05 if a2.get("p_value") is not None else None))
+            st.metric(
+                "α₂ — Cambio de nivel",
+                f"{a2.get('estimado', 'N/A'):,.0f}",
+                delta=_badge(
+                    a2.get("p_value", 1) < 0.05
+                    if a2.get("p_value") is not None
+                    else None
+                ),
+            )
         with c2:
-            st.metric("IC 95% α₂", f"[{a2.get('ic_95_lower', 'N/A'):,.0f}, {a2.get('ic_95_upper', 'N/A'):,.0f}]")
+            st.metric(
+                "IC 95% α₂",
+                f"[{a2.get('ic_95_lower', 'N/A'):,.0f}, {a2.get('ic_95_upper', 'N/A'):,.0f}]",
+            )
         with c3:
-            st.metric("α₃ — Cambio tendencia", f"{a3.get('estimado', 'N/A'):,.0f}",
-                      delta=_badge(a3.get("p_value", 1) < 0.05 if a3.get("p_value") is not None else None))
+            st.metric(
+                "α₃ — Cambio tendencia",
+                f"{a3.get('estimado', 'N/A'):,.0f}",
+                delta=_badge(
+                    a3.get("p_value", 1) < 0.05
+                    if a3.get("p_value") is not None
+                    else None
+                ),
+            )
         with c4:
             st.metric("R²", f"{bondad.get('R2', 'N/A')}")
 
@@ -208,28 +260,41 @@ with tab2:
         # Gráfico observado vs contrafactual
         if df_its is not None and "contrafactual" in df_its.columns:
             fig_its = go.Figure()
-            fig_its.add_trace(go.Scatter(
-                x=df_its["periodo"], y=df_its["total"],
-                mode="lines+markers", name="Observado",
-                line=dict(color="#1f77b4", width=2.5), marker=dict(size=8),
-            ))
+            fig_its.add_trace(
+                go.Scatter(
+                    x=df_its["periodo"],
+                    y=df_its["total"],
+                    mode="lines+markers",
+                    name="Observado",
+                    line=dict(color="#1f77b4", width=2.5),
+                    marker=dict(size=8),
+                )
+            )
             df_post = df_its[df_its["D"] == 1]
-            fig_its.add_trace(go.Scatter(
-                x=df_post["periodo"], y=df_post["contrafactual"],
-                mode="lines", name="Contrafactual (sin política)",
-                line=dict(color="gray", dash="dash", width=2),
-            ))
+            fig_its.add_trace(
+                go.Scatter(
+                    x=df_post["periodo"],
+                    y=df_post["contrafactual"],
+                    mode="lines",
+                    name="Contrafactual (sin política)",
+                    line=dict(color="gray", dash="dash", width=2),
+                )
+            )
             periodos_list = sorted(df_its["periodo"].unique().tolist())
             if "2022-S2" in periodos_list:
                 fig_its.add_vline(
                     x=periodos_list.index("2022-S2"),
-                    line_dash="dash", line_color="red",
+                    line_dash="dash",
+                    line_color="red",
                     annotation_text="T₀ = 2022-S2",
                 )
             fig_its.update_layout(
                 title=f"ITS — {sector_sel} | {tipo_evento.replace('_', ' ').title()}",
-                xaxis_title="Semestre", yaxis_title="Estudiantes",
-                template="plotly_white", height=430, hovermode="x unified",
+                xaxis_title="Semestre",
+                yaxis_title="Estudiantes",
+                template="plotly_white",
+                height=430,
+                hovermode="x unified",
             )
             st.plotly_chart(fig_its, use_container_width=True)
 
@@ -238,22 +303,29 @@ with tab2:
                 st.subheader("Efecto estimado (Observado − Contrafactual)")
                 df_ef = df_its[df_its["D"] == 1][["periodo", "efecto_estimado"]].copy()
                 df_ef["efecto_estimado"] = df_ef["efecto_estimado"].round(0)
-                fig_ef = go.Figure(go.Bar(
-                    x=df_ef["periodo"], y=df_ef["efecto_estimado"],
-                    marker_color=["green" if v >= 0 else "red" for v in df_ef["efecto_estimado"]],
-                ))
+                fig_ef = go.Figure(
+                    go.Bar(
+                        x=df_ef["periodo"],
+                        y=df_ef["efecto_estimado"],
+                        marker_color=[
+                            "green" if v >= 0 else "red"
+                            for v in df_ef["efecto_estimado"]
+                        ],
+                    )
+                )
                 fig_ef.add_hline(y=0, line_color="black")
-                fig_ef.update_layout(template="plotly_white", height=320,
-                                     yaxis_title="Estudiantes (Obs − Contrafactual)")
+                fig_ef.update_layout(
+                    template="plotly_white",
+                    height=320,
+                    yaxis_title="Estudiantes (Obs − Contrafactual)",
+                )
                 st.plotly_chart(fig_ef, use_container_width=True)
 
         # Placebos
         placebos = its_json.get("placebos", {})
         if placebos:
             st.subheader("Pruebas placebo (T₀ alternativo)")
-            df_pl = pd.DataFrame([
-                {"T₀ placebo": k, **v} for k, v in placebos.items()
-            ])
+            df_pl = pd.DataFrame([{"T₀ placebo": k, **v} for k, v in placebos.items()])
             st.dataframe(df_pl, use_container_width=True)
 
 
@@ -282,32 +354,53 @@ with tab3:
         # Estimador principal
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("β₃ (DiD estimador)", f"{est.get('beta_3', 'N/A'):,.0f}")
+            st.metric("β₃ (DiD estimador)", _fmt(est.get("beta_3")))
         with c2:
-            st.metric("IC 95% β₃", f"[{est.get('ic_95_lower', 'N/A'):,.0f}, {est.get('ic_95_upper', 'N/A'):,.0f}]")
+            st.metric(
+                "IC 95% β₃",
+                f"[{_fmt(est.get('ic_95_lower'))}, {_fmt(est.get('ic_95_upper'))}]",
+            )
         with c3:
-            st.metric("p-value", f"{est.get('p_value', 'N/A')}", delta=_badge(est.get("significativo")))
+            st.metric(
+                "p-value",
+                f"{est.get('p_value', 'N/A')}",
+                delta=_badge(est.get("significativo")),
+            )
 
         # Tabla 2×2
         st.subheader("Medias por sector y periodo")
-        tabla_2x2 = pd.DataFrame({
-            "Sector": ["Oficial", "Privada", "Diferencia"],
-            "Pre-2022": [
-                f"{medias.get('oficial_pre', 'N/A'):,.0f}",
-                f"{medias.get('privada_pre', 'N/A'):,.0f}",
-                f"{(medias.get('oficial_pre') or 0) - (medias.get('privada_pre') or 0):,.0f}",
-            ],
-            "Post-2022": [
-                f"{medias.get('oficial_post', 'N/A'):,.0f}",
-                f"{medias.get('privada_post', 'N/A'):,.0f}",
-                f"{(medias.get('oficial_post') or 0) - (medias.get('privada_post') or 0):,.0f}",
-            ],
-            "Δ (Post − Pre)": [
-                f"{(medias.get('oficial_post') or 0) - (medias.get('oficial_pre') or 0):,.0f}",
-                f"{(medias.get('privada_post') or 0) - (medias.get('privada_pre') or 0):,.0f}",
-                f"{medias.get('did_manual', 'N/A'):,.0f}",
-            ],
-        })
+        tabla_2x2 = pd.DataFrame(
+            {
+                "Sector": ["Oficial", "Privada", "Diferencia"],
+                "Pre-2022": [
+                    _fmt(medias.get("oficial_pre")),
+                    _fmt(medias.get("privada_pre")),
+                    _fmt(
+                        (medias.get("oficial_pre") or 0)
+                        - (medias.get("privada_pre") or 0)
+                    ),
+                ],
+                "Post-2022": [
+                    _fmt(medias.get("oficial_post")),
+                    _fmt(medias.get("privada_post")),
+                    _fmt(
+                        (medias.get("oficial_post") or 0)
+                        - (medias.get("privada_post") or 0)
+                    ),
+                ],
+                "Δ (Post − Pre)": [
+                    _fmt(
+                        (medias.get("oficial_post") or 0)
+                        - (medias.get("oficial_pre") or 0)
+                    ),
+                    _fmt(
+                        (medias.get("privada_post") or 0)
+                        - (medias.get("privada_pre") or 0)
+                    ),
+                    _fmt(medias.get("did_manual")),
+                ],
+            }
+        )
         st.dataframe(tabla_2x2, use_container_width=True)
 
         # Gráfico DiD
@@ -319,15 +412,22 @@ with tab3:
             pre = medias.get(pre_key)
             post = medias.get(post_key)
             if pre is not None and post is not None:
-                fig_did.add_trace(go.Scatter(
-                    x=["Pre-2022", "Post-2022"], y=[pre, post],
-                    mode="lines+markers", name=sector,
-                    line=dict(color=color, width=2.5), marker=dict(size=12),
-                ))
+                fig_did.add_trace(
+                    go.Scatter(
+                        x=["Pre-2022", "Post-2022"],
+                        y=[pre, post],
+                        mode="lines+markers",
+                        name=sector,
+                        line=dict(color=color, width=2.5),
+                        marker=dict(size=12),
+                    )
+                )
         fig_did.update_layout(
             title=f"DiD — Medias por periodo y sector | {tipo_evento.replace('_', ' ').title()}",
-            xaxis_title="Periodo", yaxis_title="Matrícula media por semestre",
-            template="plotly_white", height=380,
+            xaxis_title="Periodo",
+            yaxis_title="Matrícula media por semestre",
+            template="plotly_white",
+            height=380,
         )
         st.plotly_chart(fig_did, use_container_width=True)
 
@@ -349,30 +449,41 @@ with tab3:
         st.subheader("Event Study — Pre-tendencias")
         fig_es = go.Figure()
         colores_es = df_es["pre_tratamiento"].map({1: "#aec7e8", 0: "#1f77b4"})
-        fig_es.add_trace(go.Scatter(
-            x=df_es["periodo"], y=df_es["coef"],
-            mode="markers+lines",
-            marker=dict(color=colores_es.tolist(), size=9),
-            error_y=dict(
-                type="data", symmetric=False,
-                array=(df_es["ic_upper"] - df_es["coef"]).tolist(),
-                arrayminus=(df_es["coef"] - df_es["ic_lower"]).tolist(),
-            ),
-            name="Coef. DiD por periodo",
-        ))
+        fig_es.add_trace(
+            go.Scatter(
+                x=df_es["periodo"],
+                y=df_es["coef"],
+                mode="markers+lines",
+                marker=dict(color=colores_es.tolist(), size=9),
+                error_y=dict(
+                    type="data",
+                    symmetric=False,
+                    array=(df_es["ic_upper"] - df_es["coef"]).tolist(),
+                    arrayminus=(df_es["coef"] - df_es["ic_lower"]).tolist(),
+                ),
+                name="Coef. DiD por periodo",
+            )
+        )
         fig_es.add_hline(y=0, line_dash="dash", line_color="black")
         periodos_es = df_es["periodo"].tolist()
         if "2022-S2" in periodos_es:
-            fig_es.add_vline(x=periodos_es.index("2022-S2"), line_dash="dash", line_color="red",
-                             annotation_text="T₀")
+            fig_es.add_vline(
+                x=periodos_es.index("2022-S2"),
+                line_dash="dash",
+                line_color="red",
+                annotation_text="T₀",
+            )
         fig_es.update_layout(
             title="Event Study — Coeficientes diferenciales por semestre",
             xaxis_title="Semestre",
             yaxis_title="Coeficiente (Oficial − Privada) relativo al periodo base",
-            template="plotly_white", height=420,
+            template="plotly_white",
+            height=420,
         )
         st.plotly_chart(fig_es, use_container_width=True)
-        st.caption("Los coeficientes pre-2022 (azul claro) deben ser ~0 si se cumple el supuesto de tendencias paralelas.")
+        st.caption(
+            "Los coeficientes pre-2022 (azul claro) deben ser ~0 si se cumple el supuesto de tendencias paralelas."
+        )
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -415,25 +526,54 @@ with tab4:
             st.subheader("Análisis de escenarios — Sector Oficial")
             df_esc = pd.DataFrame(esc_of["escenarios"])
             fig_esc = go.Figure()
-            fig_esc.add_trace(go.Scatter(x=df_esc["periodo"], y=df_esc["observado"],
-                                         name="Observado", mode="lines+markers",
-                                         line=dict(color="#1f77b4", width=2.5)))
-            fig_esc.add_trace(go.Scatter(x=df_esc["periodo"], y=df_esc["escenario_base"],
-                                         name="Escenario base (contrafactual)", mode="lines",
-                                         line=dict(color="gray", dash="dash")))
-            fig_esc.add_trace(go.Scatter(x=df_esc["periodo"], y=df_esc["escenario_optimista"],
-                                         name="Optimista (+1σ)", mode="lines",
-                                         line=dict(color="green", dash="dot")))
-            fig_esc.add_trace(go.Scatter(x=df_esc["periodo"], y=df_esc["escenario_adverso"],
-                                         name="Adverso (−1σ)", mode="lines",
-                                         line=dict(color="red", dash="dot")))
+            fig_esc.add_trace(
+                go.Scatter(
+                    x=df_esc["periodo"],
+                    y=df_esc["observado"],
+                    name="Observado",
+                    mode="lines+markers",
+                    line=dict(color="#1f77b4", width=2.5),
+                )
+            )
+            fig_esc.add_trace(
+                go.Scatter(
+                    x=df_esc["periodo"],
+                    y=df_esc["escenario_base"],
+                    name="Escenario base (contrafactual)",
+                    mode="lines",
+                    line=dict(color="gray", dash="dash"),
+                )
+            )
+            fig_esc.add_trace(
+                go.Scatter(
+                    x=df_esc["periodo"],
+                    y=df_esc["escenario_optimista"],
+                    name="Optimista (+1σ)",
+                    mode="lines",
+                    line=dict(color="green", dash="dot"),
+                )
+            )
+            fig_esc.add_trace(
+                go.Scatter(
+                    x=df_esc["periodo"],
+                    y=df_esc["escenario_adverso"],
+                    name="Adverso (−1σ)",
+                    mode="lines",
+                    line=dict(color="red", dash="dot"),
+                )
+            )
             fig_esc.update_layout(
                 title="Escenarios: observado vs. contrafactual (base / optimista / adverso)",
-                xaxis_title="Semestre", yaxis_title="Matriculados",
-                template="plotly_white", height=420, hovermode="x unified",
+                xaxis_title="Semestre",
+                yaxis_title="Matriculados",
+                template="plotly_white",
+                height=420,
+                hovermode="x unified",
             )
             st.plotly_chart(fig_esc, use_container_width=True)
-            st.caption(f"σ residuos pre-2022 = {esc_of.get('sigma_residuos_pre', '?'):,}")
+            st.caption(
+                f"σ residuos pre-2022 = {esc_of.get('sigma_residuos_pre', '?'):,}"
+            )
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -465,9 +605,16 @@ with tab5:
                 interp = h.get("interpretacion", "")
 
                 if est is not None:
-                    st.metric("Estimador", f"{est:,.0f}" if isinstance(est, (int, float)) else str(est))
+                    st.metric(
+                        "Estimador",
+                        f"{est:,.0f}" if isinstance(est, (int, float)) else str(est),
+                    )
                 if ic:
-                    st.write(f"**IC 95%:** [{ic[0]:,.0f}, {ic[1]:,.0f}]" if all(isinstance(v, (int, float)) for v in ic if v is not None) else f"IC 95%: {ic}")
+                    st.write(
+                        f"**IC 95%:** [{ic[0]:,.0f}, {ic[1]:,.0f}]"
+                        if all(isinstance(v, (int, float)) for v in ic if v is not None)
+                        else f"IC 95%: {ic}"
+                    )
                 if p is not None:
                     st.write(f"**p-value:** {p}  →  {_badge(sig)}")
                 if interp:

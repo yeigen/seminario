@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from airflow.utils.task_group import TaskGroup
+from airflow.utils.trigger_rule import TriggerRule
 
 
 logger = logging.getLogger("airflow.task")
@@ -161,6 +162,33 @@ def _safe_execute(step_name: str, func, *args, **kwargs) -> Any:
         raise
 
 
+def _force_reprocess(kwargs: dict[str, Any]) -> bool:
+    """Verifica si el DAG run tiene force_reprocess=true en la conf."""
+    dag_run = kwargs.get("dag_run")
+    if dag_run and dag_run.conf and dag_run.conf.get("force_reprocess", False):
+        return True
+    return False
+
+
+def _has_data(schema: str, table: str) -> bool:
+    """Verifica si una tabla existe y tiene al menos una fila."""
+    from utils.db import table_exists, get_row_count
+
+    return table_exists(schema, table) and get_row_count(schema, table) > 0
+
+
+# ── Tablas clave por etapa (lo que cada etapa produce) ──────────────────────
+_RAW_TABLES = ["matriculados", "inscritos", "admitidos", "graduados", "docentes"]
+_UNIFIED_TABLES = [
+    "matriculados_unified",
+    "inscritos_unified",
+    "admitidos_unified",
+    "graduados_unified",
+]
+_DIM_TABLES = ["dim_institucion", "dim_programa", "dim_tiempo", "dim_sexo"]
+_FACT_TABLES = ["fact_matriculados", "fact_inscritos", "fact_admitidos"]
+
+
 def step_validate_google_auth(**kwargs: Any) -> None:
     def _validate() -> None:
         token_path = SEMINARIO_ROOT / "token.json"
@@ -180,6 +208,10 @@ def step_validate_google_auth(**kwargs: Any) -> None:
 
 
 def step_ingest(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(_has_data("raw", t) for t in _RAW_TABLES):
+        logger.info("SKIP: Ingesta — tablas raw ya tienen datos")
+        return
+
     def _ingest() -> None:
         from config.globals import MAX_SNIES_FILE_SIZE_MB
         from config.sources import PRIORITY_FILES
@@ -197,6 +229,10 @@ def step_ingest(**kwargs: Any) -> None:
 
 
 def step_create_db(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(_has_data("raw", t) for t in _RAW_TABLES):
+        logger.info("SKIP: Crear DB — tablas raw ya tienen datos")
+        return
+
     def _create_db() -> None:
         from scripts.create_db import main as create_db
 
@@ -206,6 +242,12 @@ def step_create_db(**kwargs: Any) -> None:
 
 
 def step_transform(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(
+        _has_data("unified", t) for t in _UNIFIED_TABLES
+    ):
+        logger.info("SKIP: Transformar — tablas unified ya tienen datos")
+        return
+
     def _transform() -> None:
         from etl.transform import transform_all
 
@@ -215,6 +257,12 @@ def step_transform(**kwargs: Any) -> None:
 
 
 def step_normalize(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(
+        _has_data("unified", t) for t in _UNIFIED_TABLES
+    ):
+        logger.info("SKIP: Normalizar — tablas unified ya tienen datos")
+        return
+
     def _normalize() -> None:
         from scripts.normalize_data import main as normalize_data
 
@@ -242,6 +290,12 @@ def step_create_indexes_unified(**kwargs: Any) -> None:
 
 
 def step_unify_by_year(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(
+        _has_data("unified", t) for t in _UNIFIED_TABLES
+    ):
+        logger.info("SKIP: Unificar por año — tablas unified ya tienen datos")
+        return
+
     def _unify() -> None:
         from scripts.unify_by_year import main as unify_all
 
@@ -251,6 +305,10 @@ def step_unify_by_year(**kwargs: Any) -> None:
 
 
 def step_create_dimensions(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(_has_data("facts", t) for t in _DIM_TABLES):
+        logger.info("SKIP: Crear dimensiones — tablas dim ya tienen datos")
+        return
+
     def _create_dims() -> None:
         from scripts.create_dimensions import main as create_all_dimensions
 
@@ -260,6 +318,12 @@ def step_create_dimensions(**kwargs: Any) -> None:
 
 
 def step_create_facts(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(
+        _has_data("facts", t) for t in _FACT_TABLES
+    ):
+        logger.info("SKIP: Crear hechos — tablas fact ya tienen datos")
+        return
+
     def _create_facts() -> None:
         from scripts.create_facts import main as create_all_facts
 
@@ -295,6 +359,70 @@ def step_quality(**kwargs: Any) -> None:
     _safe_execute("Checks de calidad", _quality)
 
 
+def step_check_db_ready(**kwargs: Any) -> bool:
+    """Short-circuit: salta ingestion+staging+star_schema si el pipeline ya completó
+    hasta las tablas de facts (schema 'facts').
+
+    Checkpoints por etapa (de más avanzado a menos):
+      - facts.fact_* con datos       → salta TODO (solo corre delivery)
+      - facts.dim_* con datos        → salta ingestion+staging+star_schema hasta dims
+      - unified.*_unified con datos  → salta ingestion+staging
+      - raw.*_2018+ con datos        → salta ingestion
+
+    Para forzar re-proceso completo, trigger con conf: {"force_reprocess": true}
+    Para indicar desde qué etapa reanudar: {"resume_from": "star_schema"}
+      Valores: "ingestion" | "staging" | "star_schema" | "delivery" (default: auto)
+    """
+    from utils.db import table_exists, get_row_count
+
+    dag_run = kwargs.get("dag_run")
+    conf = (dag_run.conf or {}) if dag_run else {}
+
+    if conf.get("force_reprocess", False):
+        logger.info("force_reprocess=true → pipeline completo")
+        return True
+
+    # ── Detectar etapa más avanzada completada ──────────────────────────────
+    def _has_data(schema: str, table: str) -> bool:
+        return table_exists(schema, table) and get_row_count(schema, table) > 0
+
+    # Etapa 4: facts ya construidos → solo delivery
+    FACT_TABLES = ["fact_matriculados", "fact_inscritos", "fact_admitidos"]
+    if all(_has_data("facts", t) for t in FACT_TABLES):
+        logger.info(
+            "Checkpoint: facts completos → saltando ingestion+staging+star_schema"
+        )
+        return False  # short-circuit
+
+    # Etapas 1-3 aún incompletas → correr pipeline
+    DIM_TABLES = ["dim_institucion", "dim_programa", "dim_tiempo"]
+    if all(_has_data("facts", t) for t in DIM_TABLES):
+        logger.info(
+            "Checkpoint: dimensiones listas pero facts vacíos → "
+            "pipeline necesario desde star_schema.create_facts"
+        )
+        # No podemos saltar parcialmente con ShortCircuit; correr desde el inicio
+        # es seguro porque create_dimensions hace TRUNCATE+INSERT idempotente
+        return True
+
+    UNIFIED_TABLES = ["matriculados_unified", "inscritos_unified", "admitidos_unified"]
+    if all(_has_data("unified", t) for t in UNIFIED_TABLES):
+        logger.info(
+            "Checkpoint: unified listo, faltan dimensiones/facts → pipeline desde star_schema"
+        )
+        return True
+
+    RAW_TABLES = ["matriculados_2018", "inscritos_2018", "admitidos_2018"]
+    if all(_has_data("raw", t) for t in RAW_TABLES):
+        logger.info(
+            "Checkpoint: raw listo, falta unify+dims+facts → pipeline desde staging.transform"
+        )
+        return True
+
+    logger.info("Sin datos previos → pipeline completo")
+    return True
+
+
 default_args: dict[str, Any] = {
     "owner": "seminario",
     "depends_on_past": False,
@@ -325,6 +453,14 @@ with DAG(
     max_active_runs=1,
     render_template_as_native_obj=True,
 ) as dag:
+    t_check_db_ready = ShortCircuitOperator(
+        task_id="check_db_ready",
+        python_callable=step_check_db_ready,
+        ignore_downstream_trigger_rules=False,  # solo salta las tareas en cadena directa
+        execution_timeout=timedelta(minutes=5),
+        retries=1,
+    )
+
     with TaskGroup(group_id="ingestion") as tg_ingestion:
         t_validate_auth = PythonOperator(
             task_id="validate_google_auth",
@@ -424,6 +560,7 @@ with DAG(
             retries=1,
             retry_delay=timedelta(minutes=1),
             execution_timeout=timedelta(minutes=15),
+            trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         )
 
         t_dictionaries = PythonOperator(
@@ -432,6 +569,7 @@ with DAG(
             retries=1,
             retry_delay=timedelta(minutes=1),
             execution_timeout=timedelta(minutes=15),
+            trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         )
 
         t_upload = PythonOperator(
@@ -444,4 +582,5 @@ with DAG(
 
         [t_quality, t_dictionaries] >> t_upload
 
+    t_check_db_ready >> tg_ingestion
     tg_ingestion >> tg_staging >> tg_star_schema >> tg_delivery

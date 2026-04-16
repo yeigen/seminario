@@ -27,6 +27,7 @@ COLUMN_ALIASES = {
     ],
 }
 
+
 def get_column_name(cols_info: set, preferred: str) -> str | None:
     if preferred in cols_info:
         return preferred
@@ -34,6 +35,7 @@ def get_column_name(cols_info: set, preferred: str) -> str | None:
         if alias in cols_info:
             return alias
     return None
+
 
 STUDENT_CATEGORIES: dict[str, dict] = {
     "inscritos": {
@@ -135,10 +137,12 @@ FACT_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_fact_adm_inst_tiempo   ON fact_administrativos (institucion_id, tiempo_id)",
 ]
 
+
 def _insert_batch(cur, insert_sql: str, batch: list[tuple]) -> None:
     for i in range(0, len(batch), BATCH_SIZE):
         chunk = batch[i : i + BATCH_SIZE]
         execute_values(cur, insert_sql, chunk, page_size=BATCH_SIZE)
+
 
 def load_dim_institucion_mapping() -> dict[int, int]:
     logger.info("[dim_institucion] Construyendo mapping...")
@@ -149,6 +153,7 @@ def load_dim_institucion_mapping() -> dict[int, int]:
     logger.info("[dim_institucion] %d entradas en mapping", len(mapping))
     return mapping
 
+
 def load_dim_geografia_mapping() -> dict[int, int]:
     logger.info("[dim_geografia] Construyendo mapping...")
     with managed_connection(schema=PG_SCHEMA_FACTS) as conn:
@@ -158,6 +163,7 @@ def load_dim_geografia_mapping() -> dict[int, int]:
     logger.info("[dim_geografia] %d entradas en mapping", len(mapping))
     return mapping
 
+
 def load_dim_programa_mapping() -> dict[int, int]:
     logger.info("[dim_programa] Construyendo mapping...")
     with managed_connection(schema=PG_SCHEMA_FACTS) as conn:
@@ -166,6 +172,7 @@ def load_dim_programa_mapping() -> dict[int, int]:
             mapping = {row[0]: row[1] for row in cur.fetchall()}
     logger.info("[dim_programa] %d entradas en mapping", len(mapping))
     return mapping
+
 
 def load_dim_tiempo_mapping() -> dict[str, int]:
     logger.info("[dim_tiempo] Construyendo mapping...")
@@ -179,6 +186,7 @@ def load_dim_tiempo_mapping() -> dict[str, int]:
     logger.info("[dim_tiempo] %d entradas en mapping", len(mapping))
     return mapping
 
+
 def load_dim_sexo_mapping() -> dict[int, int]:
     logger.info("[dim_sexo] Construyendo mapping...")
     with managed_connection(schema=PG_SCHEMA_FACTS) as conn:
@@ -187,6 +195,7 @@ def load_dim_sexo_mapping() -> dict[int, int]:
             mapping = {row[0]: row[1] for row in cur.fetchall()}
     logger.info("[dim_sexo] %d entradas en mapping", len(mapping))
     return mapping
+
 
 def load_dim_nivel_formacion_docente_mapping() -> dict[int, int]:
     logger.info("[dim_nivel_formacion_docente] Construyendo mapping...")
@@ -198,6 +207,7 @@ def load_dim_nivel_formacion_docente_mapping() -> dict[int, int]:
             mapping = {row[0]: row[1] for row in cur.fetchall()}
     logger.info("[dim_nivel_formacion_docente] %d entradas en mapping", len(mapping))
     return mapping
+
 
 def load_dim_dedicacion_docente_mapping() -> dict[str, int]:
     logger.info("[dim_dedicacion_docente] Construyendo mapping...")
@@ -213,6 +223,7 @@ def load_dim_dedicacion_docente_mapping() -> dict[str, int]:
                 mapping[key] = row[2]
     logger.info("[dim_dedicacion_docente] %d entradas en mapping", len(mapping))
     return mapping
+
 
 def load_fact_estudiantes(
     inst_map: dict[int, int],
@@ -289,8 +300,8 @@ def load_fact_estudiantes(
                 {mun_ies_col} as codigo_municipio_ies,
                 {mun_prog_col} as codigo_municipio_programa,
                 id_sexo,
-                CAST(ano AS INTEGER) as ano,
-                CAST(semestre AS INTEGER) as semestre,
+                CAST(CAST(ano AS NUMERIC) AS INTEGER) as ano,
+                CAST(CAST(semestre AS NUMERIC) AS INTEGER) as semestre,
                 {coalesce_expr} as cantidad
             FROM "{table_name}"
             WHERE codigo_de_la_institucion IS NOT NULL
@@ -390,6 +401,7 @@ def load_fact_estudiantes(
     )
     return total_inserted
 
+
 def load_fact_docentes(
     inst_map: dict[int, int],
     geo_map: dict[int, int],
@@ -428,8 +440,8 @@ def load_fact_docentes(
             id_maximo_nivel_de_formacion_del_docente,
             id_tiempo_de_dedicacion,
             id_tipo_de_contrato,
-            CAST(ano AS INTEGER) as ano,
-            CAST(semestre AS INTEGER) as semestre,
+            CAST(CAST(ano AS NUMERIC) AS INTEGER) as ano,
+            CAST(CAST(semestre AS NUMERIC) AS INTEGER) as semestre,
             {coalesce_expr} as cantidad
         FROM "{table_name}"
         WHERE codigo_de_la_institucion IS NOT NULL
@@ -517,6 +529,7 @@ def load_fact_docentes(
     logger.info("[fact_docentes] %d filas insertadas, %d saltadas", inserted, skipped)
     return inserted
 
+
 def load_fact_administrativos(
     inst_map: dict[int, int],
     geo_map: dict[int, int],
@@ -542,8 +555,8 @@ def load_fact_administrativos(
         SELECT
             codigo_de_la_institucion,
             {mun_ies_col} as codigo_municipio_ies,
-            CAST(ano AS INTEGER) as ano,
-            CAST(semestre AS INTEGER) as semestre,
+            CAST(CAST(ano AS NUMERIC) AS INTEGER) as ano,
+            CAST(CAST(semestre AS NUMERIC) AS INTEGER) as semestre,
             auxiliar,
             tecnico,
             profesional,
@@ -627,6 +640,7 @@ def load_fact_administrativos(
         skipped,
     )
     return inserted
+
 
 def validate_star_schema():
     logger.info("=" * 50)
@@ -748,6 +762,7 @@ def validate_star_schema():
                     f"{r[1]:,}" if r[1] else "0",
                 )
 
+
 def main():
     logger.info("=" * 60)
     logger.info("CREACION DE TABLAS DE HECHOS — Star Schema SNIES")
@@ -808,6 +823,7 @@ def main():
     logger.info("  Tiempo total:         %.1f segundos", elapsed)
     logger.info("  Destino: PostgreSQL schema '%s'", PG_SCHEMA_FACTS)
     logger.info("=" * 60)
+
 
 if __name__ == "__main__":
     main()

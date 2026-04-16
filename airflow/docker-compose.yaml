@@ -58,7 +58,7 @@ x-airflow-common: &airflow-common
     POSTGRES_USER: yeigen
     POSTGRES_PASSWORD: "LavidaEsbella16*#"
     POSTGRES_DB: seminario
-    POSTGRES_HOST: seminario-postgres
+    POSTGRES_HOST: postgres
     POSTGRES_PORT: "5432"
     # ── Dependencias adicionales del pipeline ──
     _PIP_ADDITIONAL_REQUIREMENTS: >-

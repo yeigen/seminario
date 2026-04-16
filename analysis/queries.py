@@ -55,8 +55,11 @@ def get_matricula_por_sector(tipo_evento: str = "matriculados") -> pd.DataFrame:
     Columnas: ano, semestre, sector_ies, total, periodo (str 'AAAA-SN'), t (int secuencial)
     """
     with _get_engine().connect() as conn:
-        df = pd.read_sql(text(SQL_MATRICULA_SECTOR), conn, params={"tipo_evento": tipo_evento})
+        df = pd.read_sql(
+            text(SQL_MATRICULA_SECTOR), conn, params={"tipo_evento": tipo_evento}
+        )
 
+    df["sector_ies"] = df["sector_ies"].str.capitalize()
     df["periodo"] = df["ano"].astype(str) + "-S" + df["semestre"].astype(str)
     df = df.sort_values(["ano", "semestre", "sector_ies"]).reset_index(drop=True)
 
@@ -107,6 +110,7 @@ def get_panel_ies() -> pd.DataFrame:
     with _get_engine().connect() as conn:
         df = pd.read_sql(text(SQL_PANEL_IES), conn)
 
+    df["sector_ies"] = df["sector_ies"].str.capitalize()
     df["periodo"] = df["ano"].astype(str) + "-S" + df["semestre"].astype(str)
     periodos_ord = (
         df[["ano", "semestre"]]

@@ -222,10 +222,20 @@ def get_col(df: pd.DataFrame, *candidates: str) -> pd.Series:
     return pd.Series([None] * len(df), name=candidates[0])
 
 
+def _sanitize_val(v: object) -> object:
+    """Convierte float NaN/Inf a None para que psycopg2 envíe NULL."""
+    if isinstance(v, float) and (v != v or v == float("inf") or v == float("-inf")):
+        return None
+    return v
+
+
 def _bulk_insert(cur, table_name: str, columns: list[str], df: pd.DataFrame) -> None:
     if df.empty:
         return
-    values = [tuple(row) for row in df[columns].itertuples(index=False, name=None)]
+    values = [
+        tuple(_sanitize_val(v) for v in row)
+        for row in df[columns].itertuples(index=False, name=None)
+    ]
     cols_str = ", ".join(columns)
     template = f"({', '.join(['%s'] * len(columns))})"
     execute_values(
