@@ -1,6 +1,16 @@
 # Seminario Ingenieria de Datos
 
-Pipeline ETL para analisis de datos de educacion superior en Colombia (2018-2024). Descarga datos del SNIES, ICFES y PND desde Google Drive, los carga en PostgreSQL, construye un esquema estrella (dimensiones + hechos) y exporta los schemas de vuelta a Drive.
+Pipeline ETL + análisis causal para datos de educación superior en Colombia (2018–2024). Descarga datos del SNIES, ICFES y PND desde Google Drive, los carga en PostgreSQL, construye un esquema estrella (dimensiones + hechos), y ejecuta análisis de metodología causal (ITS + DiD + Bootstrap) para evaluar los resultados de la política educativa del Gobierno Petro 2022–2026.
+
+## Hitos del proyecto
+
+| Hito | Semanas | Entregable |
+|---|---|---|
+| **Hito 1** | 1 | Alcance, preguntas, teoría del cambio, matriz de indicadores |
+| **Hito 2** | 2–3 | ETL mínimo viable, star schema PostgreSQL, dashboard Streamlit |
+| **Hito 3** | 4–6 | Metodología aprobada (ITS + DiD), primeros resultados con incertidumbre bootstrap |
+| Hito 4 | 7–9 | Robustez completa, triangulación, modelos IA |
+| Hito 5 | 10–11 | Informe final, paquete de replicación |
 
 ## Requisitos previos
 
@@ -24,6 +34,15 @@ seminario/
     dictionary.py       Generacion de diccionarios de datos
     upload.py           Exportacion pg_dump + subida a Google Drive
     pipeline.py         Orquestador local (11 pasos secuenciales)
+  analysis/             [Hito 3] Modulos de analisis causal
+    queries.py          Consultas SQL al star schema (fact_estudiantes, dims)
+    tendencias.py       Analisis descriptivo de tendencias pre/post 2022
+    its.py              Series de Tiempo Interrumpidas (ITS/segmented regression)
+    did.py              Diferencias en Diferencias (DiD agregado + panel TWFE)
+    bootstrap.py        Bootstrap por bloques + analisis de escenarios
+    runner.py           Orquestador: ejecuta todo y guarda en data/results/
+  notebooks/
+    hito3_analisis.ipynb  Notebook Jupyter con analisis paso a paso
   scripts/
     create_db.py        Carga Excel/CSV a PostgreSQL (schema raw) con COPY
     create_schemas.py   Creacion de schemas (raw, unified, facts)
@@ -86,6 +105,32 @@ uv run python reauth_manual.py
 ```
 
 El archivo `token.json` se genera en la raiz del proyecto. Se monta como volumen en Docker.
+
+## Hito 3 — Análisis causal (ITS + DiD + Bootstrap)
+
+Una vez el pipeline ETL del Hito 2 haya corrido y la base PostgreSQL esté poblada:
+
+```bash
+# 1. Ejecutar análisis completo (ITS, DiD, Bootstrap → guarda en data/results/)
+uv run python analysis/runner.py
+
+# 2. Abrir el dashboard con resultados de Hito 3
+streamlit run dashboard/app.py
+
+# 3. Explorar el notebook paso a paso
+uv run jupyter notebook notebooks/hito3_analisis.ipynb
+```
+
+Los resultados se guardan en `data/results/`:
+- `tendencias_*.csv` — series temporales por sector
+- `its_*.json` + `its_datos_*.csv` — coeficientes ITS, contrafactual
+- `did_agregado_*.json` + `did_panel_*.json` — estimadores DiD
+- `event_study_*.csv` — pre-tendencias
+- `bootstrap_*.json` — IC 95% bootstrap
+- `resumen_ejecutivo_hito3.json` — consolidado de hallazgos
+- `plots/` — gráficos interactivos HTML
+
+Ver metodología detallada en [`docs/metodologia_hito3.md`](docs/metodologia_hito3.md).
 
 ## Ejecucion
 

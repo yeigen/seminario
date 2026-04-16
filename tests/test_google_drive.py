@@ -1,8 +1,13 @@
 import sys
+from pathlib import Path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from config.globals import (
     SCOPES_METADATA,
