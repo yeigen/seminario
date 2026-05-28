@@ -3,7 +3,7 @@ dashboard/app.py — Dashboard Streamlit para Hito 3.
 
 Muestra:
   - Serie temporal de matrícula por sector (Oficial vs Privada)
-  - Resultados ITS: coeficientes, contrafactual, IC bootstrap
+  - Resultados ITS: observado vs contrafactual
   - Resultados DiD: estimador, medias pre/post, event study
   - Análisis de escenarios
   - Resumen ejecutivo de hallazgos
@@ -32,6 +32,28 @@ from config.globals import DATA_DIR
 RESULTS_DIR = DATA_DIR / "results"
 PLOTS_DIR = RESULTS_DIR / "plots"
 
+# ── SVG icons ────────────────────────────────────────────────────────────────
+
+SVG_GRADUATION = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 4 3 6 3s6-1 6-3v-5"/></svg>'
+SVG_TREND_UP = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>'
+SVG_TREND_DOWN = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>'
+SVG_CHART = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>'
+SVG_SCALE = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l5 5-5 5"/><path d="M21 8H9"/><path d="M8 21l-5-5 5-5"/><path d="M3 16h12"/></svg>'
+SVG_REFRESH = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>'
+SVG_CLIPBOARD = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>'
+SVG_SHUFFLE = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>'
+SVG_CHECK = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>'
+SVG_CROSS = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>'
+SVG_QUESTION = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'
+
+
+def _svg_icon(svg: str, label: str = "") -> str:
+    """Wrap an SVG inline with optional label text."""
+    if label:
+        return f"{svg} {label}"
+    return svg
+
+
 st.set_page_config(
     page_title="Hito 3 — Educación Superior Colombia",
     page_icon="🎓",
@@ -57,16 +79,26 @@ def _load_csv(path: Path) -> pd.DataFrame | None:
 
 def _badge(sig: bool | None) -> str:
     if sig is True:
-        return "🟢 Significativo (p<0.05)"
+        return f"{_svg_icon(SVG_CHECK)} Significativo"
     if sig is False:
-        return "🔴 No significativo (p≥0.05)"
-    return "❓ No disponible"
+        return f"{_svg_icon(SVG_CROSS)} No significativo"
+    return f"{_svg_icon(SVG_QUESTION)} No disponible"
+
+
+def _badge_plain(sig: bool | None) -> str:
+    """Text-only badge for st.metric delta (no HTML)."""
+    if sig is True:
+        return "Significativo"
+    if sig is False:
+        return "No significativo"
+    return "No disponible"
 
 
 # ── sidebar ──────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.title("🎓 Educación Superior\nColombia 2018–2024")
+    st.markdown(f"{SVG_GRADUATION} **Educación Superior**", unsafe_allow_html=True)
+    st.markdown("**Colombia 2018–2024**")
     st.caption("Hito 3 — Metodología y primeros resultados")
     st.divider()
     tipo_evento = st.selectbox(
@@ -81,10 +113,10 @@ with st.sidebar:
     sector_sel = st.selectbox("Sector IES", ["Oficial", "Privada"])
     st.divider()
     st.markdown("**Punto de quiebre:** 2022-S2  \n(inicio gobierno Petro)")
-    st.markdown("**Fuente:** SNIES 2018–2024  \nvía star schema PostgreSQL")
+    st.markdown("**Fuente:** SNIES 2018–2024")
     st.divider()
-    if st.button("🔄 Re-ejecutar análisis", type="primary", use_container_width=True):
-        with st.spinner("Ejecutando pipeline de análisis… (puede tomar ~2 min)"):
+    if st.button("Re-ejecutar análisis", type="primary", use_container_width=True):
+        with st.spinner("Ejecutando pipeline de análisis…"):
             try:
                 from analysis.runner import run
 
@@ -108,11 +140,11 @@ def _fmt(v: object) -> str:
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(
     [
-        "📈 Tendencias",
-        "📉 ITS",
-        "⚖️ DiD",
-        "🔁 Bootstrap",
-        "📋 Resumen ejecutivo",
+        "Tendencias",
+        "Análisis temporal",
+        "Comparación sectorial",
+        "Incertidumbre",
+        "Resumen ejecutivo",
     ]
 )
 
@@ -121,7 +153,10 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 # ────────────────────────────────────────────────────────────────────────────
 
 with tab1:
-    st.header("Tendencias de matrícula por sector (2018–2024)")
+    st.markdown(
+        f"{SVG_TREND_UP} **Tendencias de matrícula por sector (2018–2024)**",
+        unsafe_allow_html=True,
+    )
 
     df_tend = _load_csv(RESULTS_DIR / f"tendencias_{tipo_evento}.csv")
     df_resumen = _load_csv(RESULTS_DIR / f"resumen_pre_post_{tipo_evento}.csv")
@@ -179,7 +214,7 @@ with tab1:
             st.caption("Media semestral de estudiantes por periodo de gobierno.")
 
         if "var_pct_anual" in df_tend.columns:
-            st.subheader("Variación % anual")
+            st.subheader("Variación porcentual anual")
             fig_var = go.Figure()
             for sector, color in [("Oficial", "#1f77b4"), ("Privada", "#ff7f0e")]:
                 sub = df_tend[
@@ -199,14 +234,17 @@ with tab1:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# TAB 2: ITS
+# TAB 2: ANÁLISIS TEMPORAL (ITS)
 # ────────────────────────────────────────────────────────────────────────────
 
 with tab2:
-    st.header("Series de Tiempo Interrumpidas (ITS)")
     st.markdown(
-        "Modelo: $Y_t = \\alpha_0 + \\alpha_1 t + \\alpha_2 D_t + \\alpha_3 (t-T_0)D_t + \\varepsilon_t$  \n"
-        "Errores HAC (Newey-West, maxlags=2)."
+        f"{SVG_CHART} **Análisis temporal (antes y después del cambio de gobierno)**",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "Se compara la tendencia observada contra lo que habría ocurrido "
+        "si la tendencia anterior se hubiera mantenido (escenario sin cambio de política)."
     )
 
     its_json = _load_json(RESULTS_DIR / f"its_{sector_sel.lower()}_{tipo_evento}.json")
@@ -215,21 +253,22 @@ with tab2:
     )
 
     if its_json is None:
-        st.info("Sin resultados ITS aún. Ejecuta el análisis.")
+        st.info("Sin resultados aún. Ejecuta el análisis.")
     else:
         coefs = its_json.get("coeficientes", {})
         bondad = its_json.get("bondad_ajuste", {})
         chow = its_json.get("prueba_chow", {})
 
         # Métricas principales
-        c1, c2, c3, c4 = st.columns(4)
         a2 = coefs.get("alpha_2_cambio_nivel", {})
         a3 = coefs.get("alpha_3_cambio_tendencia", {})
+
+        c1, c2, c3 = st.columns(3)
         with c1:
             st.metric(
-                "α₂ — Cambio de nivel",
+                "Cambio inmediato",
                 f"{a2.get('estimado', 'N/A'):,.0f}",
-                delta=_badge(
+                delta=_badge_plain(
                     a2.get("p_value", 1) < 0.05
                     if a2.get("p_value") is not None
                     else None
@@ -237,25 +276,20 @@ with tab2:
             )
         with c2:
             st.metric(
-                "IC 95% α₂",
-                f"[{a2.get('ic_95_lower', 'N/A'):,.0f}, {a2.get('ic_95_upper', 'N/A'):,.0f}]",
-            )
-        with c3:
-            st.metric(
-                "α₃ — Cambio tendencia",
+                "Cambio de tendencia por semestre",
                 f"{a3.get('estimado', 'N/A'):,.0f}",
-                delta=_badge(
+                delta=_badge_plain(
                     a3.get("p_value", 1) < 0.05
                     if a3.get("p_value") is not None
                     else None
                 ),
             )
-        with c4:
-            st.metric("R²", f"{bondad.get('R2', 'N/A')}")
+        with c3:
+            st.metric("Ajuste del modelo", f"{bondad.get('R2', 'N/A')}")
 
-        st.caption(
-            f"Chow F={chow.get('chow_F')} (p={chow.get('chow_p')}) — {chow.get('conclusion', '')}"
-        )
+        conclusion_chow = chow.get("conclusion", "")
+        if conclusion_chow:
+            st.caption(f"Prueba de cambio estructural: {conclusion_chow}")
 
         # Gráfico observado vs contrafactual
         if df_its is not None and "contrafactual" in df_its.columns:
@@ -276,7 +310,7 @@ with tab2:
                     x=df_post["periodo"],
                     y=df_post["contrafactual"],
                     mode="lines",
-                    name="Contrafactual (sin política)",
+                    name="Sin cambio de política (proyección)",
                     line=dict(color="gray", dash="dash", width=2),
                 )
             )
@@ -286,10 +320,10 @@ with tab2:
                     x=periodos_list.index("2022-S2"),
                     line_dash="dash",
                     line_color="red",
-                    annotation_text="T₀ = 2022-S2",
+                    annotation_text="2022-S2",
                 )
             fig_its.update_layout(
-                title=f"ITS — {sector_sel} | {tipo_evento.replace('_', ' ').title()}",
+                title=f"Observado vs. proyección sin política — {sector_sel} | {tipo_evento.replace('_', ' ').title()}",
                 xaxis_title="Semestre",
                 yaxis_title="Estudiantes",
                 template="plotly_white",
@@ -300,7 +334,7 @@ with tab2:
 
             # Efecto estimado
             if "efecto_estimado" in df_its.columns:
-                st.subheader("Efecto estimado (Observado − Contrafactual)")
+                st.subheader("Diferencia entre lo observado y la proyección")
                 df_ef = df_its[df_its["D"] == 1][["periodo", "efecto_estimado"]].copy()
                 df_ef["efecto_estimado"] = df_ef["efecto_estimado"].round(0)
                 fig_ef = go.Figure(
@@ -317,28 +351,33 @@ with tab2:
                 fig_ef.update_layout(
                     template="plotly_white",
                     height=320,
-                    yaxis_title="Estudiantes (Obs − Contrafactual)",
+                    yaxis_title="Estudiantes (diferencia)",
                 )
                 st.plotly_chart(fig_ef, use_container_width=True)
 
         # Placebos
         placebos = its_json.get("placebos", {})
         if placebos:
-            st.subheader("Pruebas placebo (T₀ alternativo)")
-            df_pl = pd.DataFrame([{"T₀ placebo": k, **v} for k, v in placebos.items()])
+            st.subheader("Pruebas con puntos de quiebre alternativos")
+            df_pl = pd.DataFrame(
+                [{"Punto alternativo": k, **v} for k, v in placebos.items()]
+            )
             st.dataframe(df_pl, use_container_width=True)
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# TAB 3: DiD
+# TAB 3: COMPARACIÓN SECTORIAL (DiD)
 # ────────────────────────────────────────────────────────────────────────────
 
 with tab3:
-    st.header("Diferencias en Diferencias (DiD)")
     st.markdown(
-        "Modelo: $Y_{st} = \\alpha + \\beta_1 \\text{POST}_t + \\beta_2 \\text{OFICIAL}_s "
-        "+ \\beta_3 (\\text{POST}_t \\times \\text{OFICIAL}_s) + \\varepsilon_{st}$  \n"
-        "El estimador de interés es **β₃** (diferencial de cambio, Oficial − Privada, post-2022)."
+        f"{SVG_SCALE} **Comparación sectorial (Oficial vs. Privada)**",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "Se compara cómo cambió la matrícula en el sector **Oficial** respecto al sector "
+        "**Privado** después de 2022. Si la política afecta solo al sector oficial, "
+        "la diferencia entre ambos debería cambiar tras la intervención."
     )
 
     did_json = _load_json(RESULTS_DIR / f"did_agregado_{tipo_evento}.json")
@@ -346,7 +385,7 @@ with tab3:
     df_es = _load_csv(RESULTS_DIR / f"event_study_{tipo_evento}.csv")
 
     if did_json is None:
-        st.info("Sin resultados DiD. Ejecuta el análisis.")
+        st.info("Sin resultados de comparación. Ejecuta el análisis.")
     else:
         est = did_json.get("estimador_did", {})
         medias = did_json.get("medias", {})
@@ -354,17 +393,16 @@ with tab3:
         # Estimador principal
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.metric("β₃ (DiD estimador)", _fmt(est.get("beta_3")))
+            st.metric("Efecto diferencial estimado", _fmt(est.get("beta_3")))
         with c2:
             st.metric(
-                "IC 95% β₃",
+                "Intervalo de confianza 95%",
                 f"[{_fmt(est.get('ic_95_lower'))}, {_fmt(est.get('ic_95_upper'))}]",
             )
         with c3:
             st.metric(
-                "p-value",
-                f"{est.get('p_value', 'N/A')}",
-                delta=_badge(est.get("significativo")),
+                "Significancia",
+                _badge_plain(est.get("significativo")),
             )
 
         # Tabla 2×2
@@ -388,7 +426,7 @@ with tab3:
                         - (medias.get("privada_post") or 0)
                     ),
                 ],
-                "Δ (Post − Pre)": [
+                "Cambio (Post - Pre)": [
                     _fmt(
                         (medias.get("oficial_post") or 0)
                         - (medias.get("oficial_pre") or 0)
@@ -423,7 +461,7 @@ with tab3:
                     )
                 )
         fig_did.update_layout(
-            title=f"DiD — Medias por periodo y sector | {tipo_evento.replace('_', ' ').title()}",
+            title=f"Medias por periodo y sector | {tipo_evento.replace('_', ' ').title()}",
             xaxis_title="Periodo",
             yaxis_title="Matrícula media por semestre",
             template="plotly_white",
@@ -434,19 +472,19 @@ with tab3:
         # DiD Panel
         if did_panel_json:
             est_p = did_panel_json.get("estimador_did", {})
-            st.subheader("DiD Panel (efectos fijos de IES y tiempo)")
+            st.subheader("Análisis con controles por institución y tiempo")
+            efecto_pct = est_p.get("efecto_pct_aprox", "N/A")
+            interp = est_p.get("interpretacion", "")
             st.info(
-                f"β = {est_p.get('beta', 'N/A')} "
-                f"(≈ **{est_p.get('efecto_pct_aprox', 'N/A')}%**), "
-                f"p = {est_p.get('p_value', 'N/A')}  \n"
-                f"N IES = {did_panel_json.get('n_ies', '?')}, "
-                f"N obs = {did_panel_json.get('n_obs', '?')}  \n"
-                f"{est_p.get('interpretacion', '')}"
+                f"Efecto estimado: **{efecto_pct}%**  \n"
+                f"Instituciones analizadas: {did_panel_json.get('n_ies', '?')}, "
+                f"Observaciones: {did_panel_json.get('n_obs', '?')}  \n"
+                f"{interp}"
             )
 
     # Event Study
     if df_es is not None and not df_es.empty:
-        st.subheader("Event Study — Pre-tendencias")
+        st.subheader("Evolución del efecto por semestre")
         fig_es = go.Figure()
         colores_es = df_es["pre_tratamiento"].map({1: "#aec7e8", 0: "#1f77b4"})
         fig_es.add_trace(
@@ -461,7 +499,7 @@ with tab3:
                     array=(df_es["ic_upper"] - df_es["coef"]).tolist(),
                     arrayminus=(df_es["coef"] - df_es["ic_lower"]).tolist(),
                 ),
-                name="Coef. DiD por periodo",
+                name="Diferencia Oficial - Privada por semestre",
             )
         )
         fig_es.add_hline(y=0, line_dash="dash", line_color="black")
@@ -471,59 +509,63 @@ with tab3:
                 x=periodos_es.index("2022-S2"),
                 line_dash="dash",
                 line_color="red",
-                annotation_text="T₀",
+                annotation_text="2022-S2",
             )
         fig_es.update_layout(
-            title="Event Study — Coeficientes diferenciales por semestre",
+            title="Diferencia entre sectores por semestre",
             xaxis_title="Semestre",
-            yaxis_title="Coeficiente (Oficial − Privada) relativo al periodo base",
+            yaxis_title="Diferencia (Oficial - Privada)",
             template="plotly_white",
             height=420,
         )
         st.plotly_chart(fig_es, use_container_width=True)
         st.caption(
-            "Los coeficientes pre-2022 (azul claro) deben ser ~0 si se cumple el supuesto de tendencias paralelas."
+            "Los puntos azul claro (pre-2022) cerca de cero indican que ambos sectores "
+            "tenían una tendencia similar antes del cambio de gobierno."
         )
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# TAB 4: BOOTSTRAP
+# TAB 4: INCERTIDUMBRE
 # ────────────────────────────────────────────────────────────────────────────
 
 with tab4:
-    st.header("Bootstrap e incertidumbre (N=1,000 re-muestras)")
     st.markdown(
-        "Método: **block bootstrap** (bloque = 2 semestres) para preservar "
-        "la autocorrelación temporal. IC 95% por método de percentiles."
+        f"{SVG_SHUFFLE} **Análisis de incertidumbre (1,000 simulaciones)**",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "Se realizaron 1,000 simulaciones para estimar qué tan confiables "
+        "son los resultados. Los intervalos muestran el rango probable de valores."
     )
 
     boot_json = _load_json(RESULTS_DIR / f"bootstrap_{tipo_evento}.json")
 
     if boot_json is None:
-        st.info("Sin resultados bootstrap. Ejecuta el análisis.")
+        st.info("Sin resultados de simulación. Ejecuta el análisis.")
     else:
         its_b = boot_json.get("its_bootstrap", {})
         did_b = boot_json.get("did_bootstrap", {})
         a2_b = its_b.get("alpha_2_cambio_nivel", {})
         b3_b = did_b.get("beta_3_did", {})
 
-        st.subheader("Intervalos de confianza bootstrap 95%")
+        st.subheader("Rangos de confianza (95%)")
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("**α₂ — Cambio de nivel ITS (Oficial)**")
-            st.metric("Media bootstrap", f"{a2_b.get('media_boot', 'N/A'):,.0f}")
-            st.metric("IC 95% inferior", f"{a2_b.get('ic_95_lower', 'N/A'):,.0f}")
-            st.metric("IC 95% superior", f"{a2_b.get('ic_95_upper', 'N/A'):,.0f}")
+            st.markdown("**Cambio inmediato en la tendencia**")
+            st.metric("Valor central", f"{a2_b.get('media_boot', 'N/A'):,.0f}")
+            st.metric("Límite inferior", f"{a2_b.get('ic_95_lower', 'N/A'):,.0f}")
+            st.metric("Límite superior", f"{a2_b.get('ic_95_upper', 'N/A'):,.0f}")
         with col2:
-            st.markdown("**β₃ — Estimador DiD**")
-            st.metric("Media bootstrap", f"{b3_b.get('media_boot', 'N/A'):,.0f}")
-            st.metric("IC 95% inferior", f"{b3_b.get('ic_95_lower', 'N/A'):,.0f}")
-            st.metric("IC 95% superior", f"{b3_b.get('ic_95_upper', 'N/A'):,.0f}")
+            st.markdown("**Efecto diferencial entre sectores**")
+            st.metric("Valor central", f"{b3_b.get('media_boot', 'N/A'):,.0f}")
+            st.metric("Límite inferior", f"{b3_b.get('ic_95_lower', 'N/A'):,.0f}")
+            st.metric("Límite superior", f"{b3_b.get('ic_95_upper', 'N/A'):,.0f}")
 
         # Escenarios
         esc_of = boot_json.get("escenarios_oficial", {})
         if esc_of and "escenarios" in esc_of:
-            st.subheader("Análisis de escenarios — Sector Oficial")
+            st.subheader("Proyecciones — Sector Oficial")
             df_esc = pd.DataFrame(esc_of["escenarios"])
             fig_esc = go.Figure()
             fig_esc.add_trace(
@@ -539,7 +581,7 @@ with tab4:
                 go.Scatter(
                     x=df_esc["periodo"],
                     y=df_esc["escenario_base"],
-                    name="Escenario base (contrafactual)",
+                    name="Sin cambio de política",
                     mode="lines",
                     line=dict(color="gray", dash="dash"),
                 )
@@ -548,7 +590,7 @@ with tab4:
                 go.Scatter(
                     x=df_esc["periodo"],
                     y=df_esc["escenario_optimista"],
-                    name="Optimista (+1σ)",
+                    name="Escenario favorable",
                     mode="lines",
                     line=dict(color="green", dash="dot"),
                 )
@@ -557,13 +599,13 @@ with tab4:
                 go.Scatter(
                     x=df_esc["periodo"],
                     y=df_esc["escenario_adverso"],
-                    name="Adverso (−1σ)",
+                    name="Escenario desfavorable",
                     mode="lines",
                     line=dict(color="red", dash="dot"),
                 )
             )
             fig_esc.update_layout(
-                title="Escenarios: observado vs. contrafactual (base / optimista / adverso)",
+                title="Observado vs. proyecciones (base / favorable / desfavorable)",
                 xaxis_title="Semestre",
                 yaxis_title="Matriculados",
                 template="plotly_white",
@@ -571,9 +613,6 @@ with tab4:
                 hovermode="x unified",
             )
             st.plotly_chart(fig_esc, use_container_width=True)
-            st.caption(
-                f"σ residuos pre-2022 = {esc_of.get('sigma_residuos_pre', '?'):,}"
-            )
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -581,7 +620,9 @@ with tab4:
 # ────────────────────────────────────────────────────────────────────────────
 
 with tab5:
-    st.header("Resumen ejecutivo — Hito 3")
+    st.markdown(
+        f"{SVG_CLIPBOARD} **Resumen ejecutivo — Hito 3**", unsafe_allow_html=True
+    )
 
     resumen = _load_json(RESULTS_DIR / "resumen_ejecutivo_hito3.json")
 
@@ -592,7 +633,9 @@ with tab5:
         st.markdown(f"**Periodo de datos:** {resumen.get('periodo_datos', 'N/A')}")
         st.markdown(f"**Punto de quiebre:** {resumen.get('punto_quiebre', 'N/A')}")
 
-        st.info(f"📌 **Nota metodológica:** {resumen.get('nota_metodologica', '')}")
+        nota = resumen.get("nota_metodologica", "")
+        if nota:
+            st.info(f"**Nota:** {nota}")
 
         st.subheader("Hallazgos principales")
         hallazgos = resumen.get("hallazgos_principales", [])
@@ -600,50 +643,47 @@ with tab5:
             with st.expander(h.get("analisis", "Hallazgo")):
                 est = h.get("estimado")
                 ic = h.get("ic_95") or h.get("ic_95_bootstrap")
-                p = h.get("p_value")
                 sig = h.get("significativo")
                 interp = h.get("interpretacion", "")
 
                 if est is not None:
                     st.metric(
-                        "Estimador",
+                        "Valor estimado",
                         f"{est:,.0f}" if isinstance(est, (int, float)) else str(est),
                     )
                 if ic:
                     st.write(
-                        f"**IC 95%:** [{ic[0]:,.0f}, {ic[1]:,.0f}]"
+                        f"**Intervalo de confianza 95%:** [{ic[0]:,.0f}, {ic[1]:,.0f}]"
                         if all(isinstance(v, (int, float)) for v in ic if v is not None)
-                        else f"IC 95%: {ic}"
+                        else f"Intervalo: {ic}"
                     )
-                if p is not None:
-                    st.write(f"**p-value:** {p}  →  {_badge(sig)}")
+                if sig is not None:
+                    st.write(f"**Resultado:** {_badge_plain(sig)}")
                 if interp:
                     st.write(f"*{interp}*")
 
         st.divider()
-        st.subheader("Interpretación técnicamente neutral")
+        st.subheader("Interpretación")
         st.markdown("""
-Los resultados de este hito son **descriptivos y asociativos**, no causales en sentido estricto.
+Los resultados son **descriptivos**, no prueban causalidad de forma definitiva.
 
-| Tipo de afirmación | Ejemplo en este análisis |
+| Tipo | Ejemplo |
 |---|---|
-| **Hecho medido** | La matrícula en IES Oficiales creció X% entre 2022-S2 y 2024-S2 |
-| **Inferencia condicionada** | Bajo el supuesto de tendencias paralelas, el DiD sugiere un diferencial de Y estudiantes atribuible a la política |
-| **Límite explícito** | No es posible descartar que la recuperación post-pandemia u otros factores expliquen parte del cambio |
+| **Dato medido** | La matrícula en IES Oficiales creció X% entre 2022-S2 y 2024-S2 |
+| **Hallazgo condicionado** | La comparación entre sectores sugiere un diferencial de Y estudiantes asociado a la política |
+| **Limitación** | No se puede descartar que la recuperación post-pandemia u otros factores expliquen parte del cambio |
 
-**Un crítico** podría argumentar que el crecimiento post-2022 es continuación de la tendencia de recuperación post-COVID,
-no de la política de gratuidad.
+Es posible argumentar que el crecimiento post-2022 es una continuación de la recuperación post-COVID.
+También es posible señalar que el diferencial positivo Oficial - Privada es consistente con una política
+focalizada en el sector público.
 
-**Un defensor** podría señalar que el diferencial positivo Oficial − Privada es consistente con una política focalizada
-en el sector público que no debería afectar al privado de la misma forma.
-
-La evidencia no permite inclinar definitivamente la balanza entre estas lecturas con los datos disponibles.
+**La evidencia no permite inclinar definitivamente la balanza entre estas lecturas.**
         """)
 
     # Footer
     st.divider()
     st.caption(
         "Seminario Ingeniería de Datos e IA — UAO | "
-        "Hito 3: Metodología aprobada + Primeros resultados | "
+        "Hito 3: Metodología + Primeros resultados | "
         "Datos: SNIES 2018–2024 (MEN/Colombia)"
     )
