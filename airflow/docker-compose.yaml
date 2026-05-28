@@ -68,6 +68,10 @@ x-airflow-common: &airflow-common
       google-api-python-client
       python-dotenv
       pandas
+      numpy
+      scipy
+      statsmodels
+      plotly
       psycopg2-binary
       sqlalchemy
   volumes:
@@ -81,6 +85,7 @@ x-airflow-common: &airflow-common
     - ./config:/opt/airflow/config
     # ── Proyecto Seminario (read-only para los DAGs) ──
     - ../etl:/opt/airflow/seminario/etl:ro
+    - ../analysis:/opt/airflow/seminario/analysis:ro
     - ../scripts:/opt/airflow/seminario/scripts:ro
     - ../config:/opt/airflow/seminario/config:ro
     - ../utils:/opt/airflow/seminario/utils:ro

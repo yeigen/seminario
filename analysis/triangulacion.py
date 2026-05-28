@@ -85,11 +85,47 @@ def _guess_value_column(df: pd.DataFrame) -> str | None:
 def _filter_pnd_id91(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame()
+    if "IdIndicador" in df.columns:
+        ids = pd.to_numeric(df["IdIndicador"], errors="coerce")
+        exact = df[ids.eq(91)].copy()
+        if not exact.empty:
+            return exact
     mask = pd.Series(False, index=df.index)
     for col in df.columns:
         text = df[col].astype(str).str.lower()
-        mask = mask | text.str.contains("91", na=False) | text.str.contains("estudiantes nuevos", na=False)
+        mask = mask | text.str.contains("estudiantes nuevos", na=False)
     return df[mask].copy()
+
+
+def _pnd_wide_to_annual(pnd_91: pd.DataFrame) -> pd.DataFrame:
+    """Convierte columnas AvanceYYYY/MetaYYYY de SINERGIA a serie anual."""
+    if pnd_91.empty:
+        return pd.DataFrame(columns=["ano", "pnd_indicador_id91", "pnd_meta_id91"])
+
+    row = pnd_91.iloc[0]
+    records = []
+    for col in pnd_91.columns:
+        col_text = str(col)
+        if not col_text.startswith("Avance") or not col_text[-4:].isdigit():
+            continue
+        year = int(col_text[-4:])
+        value = pd.to_numeric(pd.Series([row[col]]), errors="coerce").iloc[0]
+        meta_col = f"Meta{year}"
+        meta = (
+            pd.to_numeric(pd.Series([row[meta_col]]), errors="coerce").iloc[0]
+            if meta_col in pnd_91.columns
+            else pd.NA
+        )
+        if pd.notna(value):
+            records.append(
+                {
+                    "ano": year,
+                    "pnd_indicador_id91": value,
+                    "pnd_meta_id91": meta,
+                }
+            )
+
+    return pd.DataFrame(records)
 
 
 def triangulacion_pnd_snies(df_primer_curso: pd.DataFrame, pnd_df: pd.DataFrame | None) -> tuple[pd.DataFrame, dict]:
@@ -114,6 +150,18 @@ def triangulacion_pnd_snies(df_primer_curso: pd.DataFrame, pnd_df: pd.DataFrame 
         snies_anual["pnd_indicador_id91"] = pd.NA
         resumen["nota"] = "La fuente PND existe, pero no se encontro una fila claramente asociada a ID 91."
         return snies_anual, resumen
+
+    pnd_wide = _pnd_wide_to_annual(pnd_91)
+    if not pnd_wide.empty:
+        merged = snies_anual.merge(pnd_wide, on="ano", how="left")
+        valid = merged[["snies_primer_curso_oficial", "pnd_indicador_id91"]].dropna()
+        if len(valid) >= 2:
+            resumen["correlacion_pnd_snies"] = round(float(valid.corr().iloc[0, 1]), 4)
+        resumen["nota"] = (
+            "Indicador PND/SINERGIA ID 91 convertido desde columnas AvanceYYYY. "
+            "Comparar tendencias, no niveles: PND reporta avance administrativo y SNIES conteos agregados."
+        )
+        return merged, resumen
 
     year_col = _guess_year_column(pnd_91)
     value_col = _guess_value_column(pnd_91)

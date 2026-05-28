@@ -186,7 +186,7 @@ _UNIFIED_TABLES = [
     "graduados_unified",
 ]
 _DIM_TABLES = ["dim_institucion", "dim_programa", "dim_tiempo", "dim_sexo"]
-_FACT_TABLES = ["fact_matriculados", "fact_inscritos", "fact_admitidos"]
+_FACT_TABLES = ["fact_estudiantes", "fact_docentes", "fact_administrativos"]
 
 
 def step_validate_google_auth(**kwargs: Any) -> None:
@@ -359,12 +359,24 @@ def step_quality(**kwargs: Any) -> None:
     _safe_execute("Checks de calidad", _quality)
 
 
+def step_final_analysis(**kwargs: Any) -> None:
+    def _analysis() -> None:
+        from analysis.runner_final import run as run_final_analysis
+
+        run_final_analysis()
+
+    _safe_execute("Analisis final Hito 4/5", _analysis)
+
+
 def step_check_db_ready(**kwargs: Any) -> bool:
-    """Short-circuit: salta ingestion+staging+star_schema si el pipeline ya completó
-    hasta las tablas de facts (schema 'facts').
+    """Registra el checkpoint actual y deja continuar el DAG.
+
+    Las tareas posteriores son idempotentes y saltan internamente si sus tablas
+    ya existen. Devolver siempre True evita que Airflow salte delivery/analysis
+    cuando la base ya está poblada.
 
     Checkpoints por etapa (de más avanzado a menos):
-      - facts.fact_* con datos       → salta TODO (solo corre delivery)
+      - facts.fact_* con datos       → las tareas ETL saltan, corre delivery/analysis
       - facts.dim_* con datos        → salta ingestion+staging+star_schema hasta dims
       - unified.*_unified con datos  → salta ingestion+staging
       - raw.*_2018+ con datos        → salta ingestion
@@ -387,12 +399,12 @@ def step_check_db_ready(**kwargs: Any) -> bool:
         return table_exists(schema, table) and get_row_count(schema, table) > 0
 
     # Etapa 4: facts ya construidos → solo delivery
-    FACT_TABLES = ["fact_matriculados", "fact_inscritos", "fact_admitidos"]
+    FACT_TABLES = ["fact_estudiantes", "fact_docentes", "fact_administrativos"]
     if all(_has_data("facts", t) for t in FACT_TABLES):
         logger.info(
-            "Checkpoint: facts completos → saltando ingestion+staging+star_schema"
+            "Checkpoint: facts completos → tareas ETL haran SKIP y correra delivery/analysis"
         )
-        return False  # short-circuit
+        return True
 
     # Etapas 1-3 aún incompletas → correr pipeline
     DIM_TABLES = ["dim_institucion", "dim_programa", "dim_tiempo"]
@@ -582,5 +594,15 @@ with DAG(
 
         [t_quality, t_dictionaries] >> t_upload
 
+    with TaskGroup(group_id="analysis") as tg_analysis:
+        t_final_analysis = PythonOperator(
+            task_id="final_hito4_hito5",
+            python_callable=step_final_analysis,
+            retries=1,
+            retry_delay=timedelta(minutes=2),
+            execution_timeout=timedelta(minutes=45),
+            trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
+        )
+
     t_check_db_ready >> tg_ingestion
-    tg_ingestion >> tg_staging >> tg_star_schema >> tg_delivery
+    tg_ingestion >> tg_staging >> tg_star_schema >> tg_delivery >> tg_analysis

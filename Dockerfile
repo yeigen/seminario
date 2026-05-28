@@ -65,6 +65,7 @@ COPY --from=builder --chown=app:app /app/.venv /app/.venv
 # Copiar solo el código fuente necesario (sin .venv, .git, etc.)
 COPY --chown=app:app config/ /app/config/
 COPY --chown=app:app etl/ /app/etl/
+COPY --chown=app:app analysis/ /app/analysis/
 COPY --chown=app:app scripts/ /app/scripts/
 COPY --chown=app:app utils/ /app/utils/
 COPY --chown=app:app dashboard/ /app/dashboard/
