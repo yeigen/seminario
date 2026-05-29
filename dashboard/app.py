@@ -836,21 +836,6 @@ with st.sidebar:
     )
     sector_sel = st.selectbox("Sector IES", ["Oficial", "Privada"])
     st.divider()
-    with st.expander("📖 Glosario de siglas y conceptos"):
-        st.markdown(
-            "- **SNIES:** sistema oficial de información de educación superior.\n"
-            "- **ICFES:** pruebas estandarizadas (Saber 11, Saber Pro).\n"
-            "- **PND:** Plan Nacional de Desarrollo (seguimiento vía SINERGIA).\n"
-            "- **ITS:** compara lo observado vs una proyección sin política.\n"
-            "- **DiD:** compara Oficial vs Privada (control) antes/después de 2022.\n"
-            "- **IC 95%:** rango probable del efecto; si no incluye 0, es significativo.\n"
-            "- **Significativo:** el efecto es distinto de cero más allá del azar.\n"
-            "- **R²:** qué tanto explica el modelo (0 a 1).\n\n"
-            "**Datos:** 2019 no está en SNIES; primera matrícula y graduados "
-            "existen desde 2020.\n\n"
-            "_Detalle completo en `GLOSARIO.md`._"
-        )
-    st.divider()
     st.markdown("**Equipo**")
     team_members = [
         ("Belmos", TEAM_IMAGES_DIR / "belmos.png"),
@@ -1350,17 +1335,6 @@ with tab_temporal:
         "Se compara la tendencia observada contra lo que habría ocurrido "
         "si la tendencia anterior se hubiera mantenido (escenario sin cambio de política)."
     )
-    with st.expander("¿Qué es ITS (Interrupted Time Series)?"):
-        st.markdown(
-            "**ITS — Series de Tiempo Interrumpidas.** Se ajusta la tendencia de los datos "
-            "**antes** de un evento (aquí, el cambio de gobierno en 2022-S2) y se **proyecta** "
-            "como si nada hubiera pasado. La diferencia entre lo **observado** y esa **proyección** "
-            "es el efecto atribuible al evento.\n\n"
-            "- **Cambio inmediato (nivel):** salto justo después del evento.\n"
-            "- **Cambio de tendencia (pendiente):** cómo cambia el ritmo de crecimiento por semestre.\n\n"
-            "Es un método de un solo grupo: no necesita un grupo de comparación, "
-            "pero asume que la tendencia previa habría continuado igual."
-        )
 
     its_json = _load_json(RESULTS_DIR / f"its_{sector_sel.lower()}_{tipo_evento}.json")
     df_its = _load_csv(
@@ -1501,17 +1475,6 @@ with tab_sectorial:
         "**Privado** después de 2022. Si la política afecta solo al sector oficial, "
         "la diferencia entre ambos debería cambiar tras la intervención."
     )
-    with st.expander("¿Qué es DiD (Diferencias en Diferencias)?"):
-        st.markdown(
-            "**DiD — Diferencias en Diferencias.** Compara dos grupos (aquí **Oficial** vs "
-            "**Privada**) antes y después del evento. La idea: el sector privado actúa como "
-            "**grupo de control** para descontar todo lo que habría pasado de igual forma en "
-            "ambos (economía, demografía).\n\n"
-            "El efecto = *(cambio en Oficial)* − *(cambio en Privada)*. Así se aísla lo "
-            "atribuible a la política que afecta principalmente al sector oficial.\n\n"
-            "Supone **tendencias paralelas**: antes del evento ambos sectores se movían "
-            "de forma similar (esto se chequea en el *event study* de más abajo)."
-        )
 
     did_json = _load_json(RESULTS_DIR / f"did_agregado_{tipo_evento}.json")
     did_panel_json = _load_json(RESULTS_DIR / f"did_panel_{tipo_evento}.json")
