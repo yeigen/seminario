@@ -23,7 +23,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 import streamlit as st
-import streamlit.components.v1 as components
 from plotly.subplots import make_subplots
 
 # ── rutas ────────────────────────────────────────────────────────────────────
@@ -472,44 +471,6 @@ def _inject_theme_css() -> None:
     st.markdown(css, unsafe_allow_html=True)
 
 
-def _inject_parallax_js() -> None:
-    components.html(
-        """
-        <script>
-        (() => {
-            const root = window.parent.document.documentElement;
-            let raf = null;
-            let targetX = 0;
-            let targetY = 0;
-
-            function applyParallax() {
-                raf = null;
-                root.style.setProperty('--mouse-x', `${50 + targetX * 50}%`);
-                root.style.setProperty('--mouse-y', `${50 + targetY * 50}%`);
-                root.style.setProperty('--parallax-x', `${targetX * -22}px`);
-                root.style.setProperty('--parallax-y', `${targetY * -18}px`);
-            }
-
-            function onMouseMove(event) {
-                const width = window.parent.innerWidth || 1;
-                const height = window.parent.innerHeight || 1;
-                targetX = (event.clientX / width - 0.5) * 2;
-                targetY = (event.clientY / height - 0.5) * 2;
-                if (!raf) raf = window.parent.requestAnimationFrame(applyParallax);
-            }
-
-            if (window.parent.__seminarioParallaxHandler) {
-                window.parent.removeEventListener('mousemove', window.parent.__seminarioParallaxHandler);
-            }
-            window.parent.__seminarioParallaxHandler = onMouseMove;
-            window.parent.addEventListener('mousemove', onMouseMove, { passive: true });
-        })();
-        </script>
-        """,
-        height=1,
-        width=0,
-    )
-
 # ── SVG icons ────────────────────────────────────────────────────────────────
 
 SVG_GRADUATION = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 4 3 6 3s6-1 6-3v-5"/></svg>'
@@ -540,7 +501,6 @@ st.set_page_config(
 )
 
 _inject_theme_css()
-_inject_parallax_js()
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -978,6 +938,7 @@ with tab_general:
             ("Periodo reciente", latest_period),
             ("Total", _fmt(total_latest)),
             ("Oficial", _fmt(oficial_latest)),
+            ("Privada", _fmt(privada_latest)),
             ("Participación oficial", f"{oficial_share:.1f}%"),
         ]
         _metric_grid(kpis)
@@ -1001,6 +962,15 @@ with tab_general:
                         line=dict(color=color, width=2.8),
                         marker=dict(size=8),
                     )
+                )
+            periodos_ov = sorted(df_overview["periodo"].unique().tolist())
+            if "2022-S2" in periodos_ov:
+                fig_overview.add_vline(
+                    x=periodos_ov.index("2022-S2"),
+                    line_dash="dash",
+                    line_color=COLOR_PINK,
+                    annotation_text="Cambio de gobierno (2022-S2)",
+                    annotation_position="top left",
                 )
             fig_overview.update_layout(
                 title=f"Evolución de {tipo_evento.replace('_', ' ')}",
@@ -1115,8 +1085,12 @@ with tab_general:
 
 with tab_snies:
     st.markdown(
-        f"{SVG_TREND_UP} **SNIES**",
+        f"{SVG_TREND_UP} **SNIES — detalle de la fuente**",
         unsafe_allow_html=True,
+    )
+    st.caption(
+        "La evolución general está en la pestaña «General». Aquí se detalla el cambio "
+        "antes y después de 2022 y la variación año a año."
     )
 
     df_tend = _load_csv(RESULTS_DIR / f"tendencias_{tipo_evento}.csv")
@@ -1125,61 +1099,14 @@ with tab_snies:
     if df_tend is None:
         st.info("Sin datos disponibles.")
     else:
-        latest_period = df_tend.sort_values("t")["periodo"].iloc[-1]
-        latest = df_tend[df_tend["periodo"] == latest_period]
-        total_latest = latest["total"].sum()
-        oficial_latest = latest.loc[latest["sector_ies"].eq("Oficial"), "total"].sum()
-        privada_latest = latest.loc[latest["sector_ies"].eq("Privada"), "total"].sum()
-        _metric_grid(
-            [
-                ("Periodo reciente", latest_period),
-                ("Total", _fmt(total_latest)),
-                ("Oficial", _fmt(oficial_latest)),
-                ("Privada", _fmt(privada_latest)),
-            ]
-        )
-
-        # Serie temporal
-        fig = go.Figure()
-        for sector, color in [("Oficial", COLOR_PURPLE), ("Privada", COLOR_CYAN)]:
-            sub = df_tend[df_tend["sector_ies"] == sector].sort_values("t")
-            fig.add_trace(
-                go.Scatter(
-                    x=sub["periodo"],
-                    y=sub["total"],
-                    mode="lines+markers",
-                    name=sector,
-                    line=dict(color=color, width=2.5),
-                    marker=dict(size=8),
-                )
-            )
-        periodos = sorted(df_tend["periodo"].unique().tolist())
-        if "2022-S2" in periodos:
-            fig.add_vline(
-                x=periodos.index("2022-S2"),
-                line_dash="dash",
-                line_color=COLOR_PINK,
-                annotation_text="Inicio Gobierno Petro (2022-S2)",
-                annotation_position="top right",
-            )
-        fig.update_layout(
-            title=f"{tipo_evento.replace('_', ' ').title()} por sector IES — Colombia 2018–2024",
-            xaxis_title="Semestre",
-            yaxis_title="Estudiantes",
-            hovermode="x unified",
-            template=PLOTLY_TEMPLATE,
-            height=430,
-        )
-        _plotly_chart(fig)
-
-        if df_resumen is not None:
+        if df_resumen is not None and not df_resumen.empty:
             st.subheader("Cambio pre/post 2022 por sector")
             cols = st.columns(len(df_resumen))
             for i, row in df_resumen.iterrows():
                 with cols[i]:
                     delta = row.get("cambio_pct_pre_post", 0)
                     st.metric(
-                        label=row["sector_ies"],
+                        label=_normalize_sector_name(row["sector_ies"]),
                         value=f"{row['media_post_2022']:,.0f}",
                         delta=f"{delta:+.1f}% vs. pre-2022",
                         delta_color="normal",
@@ -1202,8 +1129,30 @@ with tab_snies:
                     )
                 )
             fig_var.add_hline(y=0, line_color=COLOR_GRID_ZERO, line_width=1)
-            fig_var.update_layout(barmode="group", template=PLOTLY_TEMPLATE, height=380)
+            fig_var.update_layout(
+                barmode="group",
+                template=PLOTLY_TEMPLATE,
+                height=380,
+                title="Crecimiento anual por sector",
+                xaxis_title="Periodo",
+                yaxis_title="Variación anual",
+                yaxis=dict(ticksuffix="%"),
+            )
             _plotly_chart(fig_var)
+
+        st.subheader("Datos por semestre y sector")
+        df_tend_show = df_tend.copy()
+        df_tend_show["sector_ies"] = df_tend_show["sector_ies"].map(_normalize_sector_name)
+        _presentation_table(
+            df_tend_show,
+            {
+                "periodo": "Periodo",
+                "sector_ies": "Sector",
+                "total": "Estudiantes",
+                "var_pct_anual": "Variación anual (%)",
+            },
+            height=360,
+        )
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1610,61 +1559,94 @@ with tab_robustez:
     if robustez_json is None or df_robustez is None:
         st.info("Sin datos disponibles.")
     else:
-        st.subheader("Sensibilidad")
-        df_show = df_robustez.copy()
-        if "significativo" in df_show.columns:
+        st.caption(
+            "Se repitió cada análisis cambiando supuestos (corte temporal, forma del modelo, "
+            "muestra). Si el resultado se mantiene, es robusto."
+        )
+
+        ok = df_robustez[df_robustez["estado"].eq("ok")].copy()
+        estimador_labels = {
+            "ITS_alpha2_nivel": "Cambio inmediato (ITS)",
+            "ITS_alpha3_tendencia": "Cambio de tendencia (ITS)",
+            "DiD_agregado_beta3": "Efecto diferencial (DiD)",
+            "DiD_panel_TWFE_beta": "Efecto con controles (DiD panel)",
+        }
+        ok["metodo"] = ok["estimador"].map(estimador_labels).fillna(ok["estimador"])
+
+        n_total = len(ok)
+        n_sig = int(ok["significativo"].sum()) if "significativo" in ok.columns else 0
+        pct_sig = (n_sig / n_total * 100) if n_total else 0
+        _metric_grid(
+            [
+                ("Especificaciones probadas", f"{n_total:,.0f}"),
+                ("Resultados significativos", f"{n_sig:,.0f}"),
+                ("% significativas", f"{pct_sig:.0f}%"),
+                ("Métodos evaluados", f"{ok['metodo'].nunique():,.0f}"),
+            ]
+        )
+
+        # Resumen compacto: cuántas corridas son significativas por método
+        if "significativo" in ok.columns:
+            st.subheader("¿Cuántas pruebas confirman cada efecto?")
+            resumen_metodo = (
+                ok.assign(
+                    Significativas=ok["significativo"].astype(bool),
+                    No=~ok["significativo"].astype(bool),
+                )
+                .groupby("metodo", as_index=False)[["Significativas", "No"]]
+                .sum()
+                .sort_values("Significativas")
+            )
+            fig_rob = go.Figure()
+            fig_rob.add_trace(
+                go.Bar(
+                    y=resumen_metodo["metodo"],
+                    x=resumen_metodo["Significativas"],
+                    name="Significativas",
+                    orientation="h",
+                    marker_color=COLOR_GREEN,
+                )
+            )
+            fig_rob.add_trace(
+                go.Bar(
+                    y=resumen_metodo["metodo"],
+                    x=resumen_metodo["No"],
+                    name="No significativas",
+                    orientation="h",
+                    marker_color=COLOR_MUTED,
+                )
+            )
+            fig_rob.update_layout(
+                barmode="stack",
+                template=PLOTLY_TEMPLATE,
+                height=320,
+                xaxis_title="Número de pruebas",
+                yaxis_title="",
+            )
+            _plotly_chart(fig_rob)
+            st.caption(
+                "Cada método se probó varias veces con supuestos distintos. "
+                "Más barras verdes = resultado más robusto."
+            )
+
+        with st.expander("Ver detalle de todas las pruebas"):
+            df_show = ok.copy()
             df_show["significativo"] = df_show["significativo"].map(
                 {True: "Sí", False: "No"}
             ).fillna("—")
-        _presentation_table(
-            df_show,
-            {
-                "estimador": "Análisis",
-                "tipo_evento": "Indicador",
-                "t0": "Corte",
-                "coeficiente": "Efecto",
-                "ic_95_lower": "Límite inferior",
-                "ic_95_upper": "Límite superior",
-                "significativo": "Concluyente",
-            },
-            height=360,
-        )
-
-        if {"coeficiente", "ic_95_lower", "ic_95_upper", "estimador"}.issubset(
-            df_robustez.columns
-        ):
-            plot_df = df_robustez[df_robustez["estado"].eq("ok")].copy()
-            plot_df = plot_df.head(40)
-            plot_df["label"] = (
-                plot_df["estimador"].astype(str)
-                + " — "
-                + plot_df["tipo_evento"].astype(str)
-                + " (corte "
-                + plot_df["t0"].astype(str)
-                + ")"
+            _presentation_table(
+                df_show,
+                {
+                    "metodo": "Análisis",
+                    "tipo_evento": "Indicador",
+                    "t0": "Corte",
+                    "coeficiente": "Efecto",
+                    "ic_95_lower": "Límite inferior",
+                    "ic_95_upper": "Límite superior",
+                    "significativo": "Concluyente",
+                },
+                height=360,
             )
-            fig_rob = go.Figure(
-                go.Scatter(
-                    x=plot_df["coeficiente"],
-                    y=plot_df["label"],
-                    mode="markers",
-                    error_x=dict(
-                        type="data",
-                        symmetric=False,
-                        array=(plot_df["ic_95_upper"] - plot_df["coeficiente"]).clip(lower=0),
-                        arrayminus=(plot_df["coeficiente"] - plot_df["ic_95_lower"]).clip(lower=0),
-                    ),
-                )
-            )
-            fig_rob.add_vline(x=0, line_dash="dash", line_color=COLOR_MUTED)
-            fig_rob.update_layout(
-                title="Primeras 40 corridas de sensibilidad",
-                xaxis_title="Coeficiente estimado",
-                yaxis_title="Especificación",
-                template=PLOTLY_TEMPLATE,
-                height=700,
-            )
-            _plotly_chart(fig_rob)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -1906,21 +1888,38 @@ with tab_icfes:
                     mode="markers",
                     text=df_cross_year["departamento_label"],
                     marker=dict(
-                        size=(df_cross_year["observaciones_icfes"] ** 0.5).clip(lower=8, upper=42),
-                        color=df_cross_year["observaciones_icfes"],
-                        colorscale=DRACULA_COLORSCALE,
-                        showscale=True,
-                        colorbar=dict(title="Obs. ICFES"),
-                        line=dict(color="rgba(248,248,242,0.72)", width=1),
+                        size=12,
+                        color=COLOR_CYAN,
+                        line=dict(color="rgba(248,248,242,0.55)", width=1),
                     ),
+                    name="Departamentos",
                     hovertemplate=(
                         "%{text}<br>"
                         "Puntaje ICFES: %{x:.2f}<br>"
-                        "SNIES: %{y:,.0f}<br>"
-                        "Obs. ICFES: %{marker.color:,.0f}<extra></extra>"
+                        "SNIES: %{y:,.0f}<extra></extra>"
                     ),
                 )
             )
+            # Línea de tendencia (ajuste lineal simple)
+            x = df_cross_year["puntaje_promedio"]
+            y = df_cross_year["total_snies"]
+            if len(x) >= 2 and x.nunique() >= 2:
+                xm, ym = x.mean(), y.mean()
+                denom = ((x - xm) ** 2).sum()
+                if denom:
+                    slope = ((x - xm) * (y - ym)).sum() / denom
+                    intercept = ym - slope * xm
+                    x_line = [x.min(), x.max()]
+                    fig_cross.add_trace(
+                        go.Scatter(
+                            x=x_line,
+                            y=[slope * xv + intercept for xv in x_line],
+                            mode="lines",
+                            name="Tendencia",
+                            line=dict(color=COLOR_PINK, dash="dash", width=2),
+                            hoverinfo="skip",
+                        )
+                    )
             fig_cross.update_layout(
                 title=f"{fuente_icfes} vs {evento_cruce.replace('_', ' ')} SNIES — {cross_year}",
                 xaxis_title="Puntaje ICFES promedio",
@@ -1931,6 +1930,7 @@ with tab_icfes:
             _plotly_chart(fig_cross)
 
             corr = df_cross_year[["puntaje_promedio", "total_snies"]].corr().iloc[0, 1]
+            st.caption("Cada punto es un departamento. La línea muestra la tendencia general.")
             st.metric("Correlación descriptiva", f"{corr:.3f}" if pd.notna(corr) else "N/A")
             _dataframe(
                 df_cross_year[
