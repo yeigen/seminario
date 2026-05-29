@@ -369,9 +369,12 @@ def step_create_icfes_facts(**kwargs: Any) -> None:
 
 def step_upload(**kwargs: Any) -> None:
     def _upload() -> None:
-        from etl.upload import upload_databases
+        from etl.upload import upload_databases, upload_results
 
         upload_databases()
+        # Sube también los artefactos del análisis (ITS, DiD, robustez,
+        # triangulación) empaquetados; requiere que final_hito4_hito5 ya corrió.
+        upload_results()
 
     _safe_execute("Upload a Drive", _upload)
 
@@ -656,4 +659,6 @@ with DAG(
         )
 
     t_check_db_ready >> tg_ingestion
-    tg_ingestion >> tg_staging >> tg_star_schema >> tg_delivery >> tg_analysis
+    # El análisis corre ANTES de delivery para que sus resultados se incluyan
+    # en la subida a Drive (upload_results empaqueta data/results).
+    tg_ingestion >> tg_staging >> tg_star_schema >> tg_analysis >> tg_delivery

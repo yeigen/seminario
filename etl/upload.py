@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from config.globals import (
     SCOPES_READWRITE,
+    DATA_DIR,
     DRIVE_UPLOAD_FOLDER_ID,
     PG_EXPORT_DIR,
     PG_EXPORT_FILES,
@@ -20,6 +22,8 @@ from config.globals import (
 )
 from utils.google_auth import build_drive_service
 from utils.logger import logger
+
+RESULTS_DIR = DATA_DIR / "results"
 
 
 def export_pg_schemas() -> list[Path]:
@@ -97,9 +101,9 @@ def _find_existing_file(service, filename: str, folder_id: str) -> str | None:
     return files[0]["id"] if files else None
 
 
-def _upload_file(service, local_path: Path, folder_id: str) -> dict:
+def _upload_file(service, local_path: Path, folder_id: str, mimetype: str = "application/sql") -> dict:
     filename = local_path.name
-    media = MediaFileUpload(str(local_path), mimetype="application/sql", resumable=True)
+    media = MediaFileUpload(str(local_path), mimetype=mimetype, resumable=True)
     existing_id = _find_existing_file(service, filename, folder_id)
 
     if existing_id:
@@ -168,5 +172,37 @@ def upload_databases() -> list[dict]:
     return results
 
 
+def upload_results() -> list[dict]:
+    """Empaqueta data/results en un .zip y lo sube a Drive.
+
+    Incluye los artefactos del análisis (ITS, DiD, robustez, triangulación y
+    sus gráficos). Debe ejecutarse DESPUÉS del análisis final para que los
+    resultados ya estén generados.
+    """
+    if not RESULTS_DIR.exists() or not any(RESULTS_DIR.iterdir()):
+        logger.warning("No hay resultados en %s para subir", RESULTS_DIR)
+        return []
+
+    PG_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    archive_base = PG_EXPORT_DIR / "seminario_resultados"
+    archive_path = Path(
+        shutil.make_archive(str(archive_base), "zip", root_dir=str(RESULTS_DIR))
+    )
+    size_mb = archive_path.stat().st_size / (1024 * 1024)
+    logger.info("Resultados empaquetados: %s (%.1f MB)", archive_path.name, size_mb)
+
+    service = _build_drive_service()
+    try:
+        result = _upload_file(
+            service, archive_path, DRIVE_UPLOAD_FOLDER_ID, mimetype="application/zip"
+        )
+        logger.info("  OK: %s (id=%s)", result["name"], result["id"])
+        return [result]
+    except Exception as e:
+        logger.error("  ERROR subiendo resultados: %s", e)
+        return []
+
+
 if __name__ == "__main__":
     upload_databases()
+    upload_results()
