@@ -836,6 +836,21 @@ with st.sidebar:
     )
     sector_sel = st.selectbox("Sector IES", ["Oficial", "Privada"])
     st.divider()
+    with st.expander("📖 Glosario de siglas y conceptos"):
+        st.markdown(
+            "- **SNIES:** sistema oficial de información de educación superior.\n"
+            "- **ICFES:** pruebas estandarizadas (Saber 11, Saber Pro).\n"
+            "- **PND:** Plan Nacional de Desarrollo (seguimiento vía SINERGIA).\n"
+            "- **ITS:** compara lo observado vs una proyección sin política.\n"
+            "- **DiD:** compara Oficial vs Privada (control) antes/después de 2022.\n"
+            "- **IC 95%:** rango probable del efecto; si no incluye 0, es significativo.\n"
+            "- **Significativo:** el efecto es distinto de cero más allá del azar.\n"
+            "- **R²:** qué tanto explica el modelo (0 a 1).\n\n"
+            "**Datos:** 2019 no está en SNIES; primera matrícula y graduados "
+            "existen desde 2020.\n\n"
+            "_Detalle completo en `GLOSARIO.md`._"
+        )
+    st.divider()
     st.markdown("**Equipo**")
     team_members = [
         ("Belmos", TEAM_IMAGES_DIR / "belmos.png"),
@@ -902,8 +917,14 @@ def _side_metric_groups(groups: list[tuple[str, list[tuple[str, object]]]]) -> N
 
 
 def _normalize_sector_name(value: object) -> str:
-    text = str(value).strip()
-    return "Privada" if text == "Privado" else text
+    """Unifica el sector: consolida 'Privado'/'privado' en 'Privada' y
+    capitaliza (la fuente mezcla mayúsculas/minúsculas entre tablas)."""
+    text = str(value).strip().lower()
+    if text in ("privado", "privada"):
+        return "Privada"
+    if text == "oficial":
+        return "Oficial"
+    return str(value).strip().title()
 
 
 def _plotly_chart(fig: go.Figure) -> None:
@@ -928,7 +949,7 @@ def _plotly_chart(fig: go.Figure) -> None:
 
 _DECIMAL_HINTS = (
     "pct", "coef", "tasa", "ratio", "puntaje", "promedio", "proxy",
-    "indicador", "valor", "media", "cambio", "anual", "variaci", "%",
+    "indicador", "valor", "media", "cambio", "anual", "variaci", "%", "/",
 )
 
 
@@ -1233,14 +1254,26 @@ with tab_snies:
     else:
         if df_resumen is not None and not df_resumen.empty:
             st.subheader("Cambio pre/post 2022 por sector")
-            cols = st.columns(len(df_resumen))
-            for i, row in df_resumen.iterrows():
+            # Consolida el rótulo sucio "Privado" dentro de "Privada" y
+            # recalcula el cambio % sobre las medias agregadas.
+            resumen_clean = df_resumen.copy()
+            resumen_clean["sector_ies"] = resumen_clean["sector_ies"].map(_normalize_sector_name)
+            resumen_clean = resumen_clean.groupby("sector_ies", as_index=False).agg(
+                media_pre_2022=("media_pre_2022", "sum"),
+                media_post_2022=("media_post_2022", "sum"),
+            )
+            resumen_clean["cambio_pct_pre_post"] = (
+                (resumen_clean["media_post_2022"] - resumen_clean["media_pre_2022"])
+                / resumen_clean["media_pre_2022"].replace(0, pd.NA)
+                * 100
+            ).fillna(0)
+            cols = st.columns(len(resumen_clean))
+            for i, (_, row) in enumerate(resumen_clean.iterrows()):
                 with cols[i]:
-                    delta = row.get("cambio_pct_pre_post", 0)
                     st.metric(
-                        label=_normalize_sector_name(row["sector_ies"]),
+                        label=row["sector_ies"],
                         value=f"{row['media_post_2022']:,.0f}",
-                        delta=f"{delta:+.1f}% vs. pre-2022",
+                        delta=f"{row['cambio_pct_pre_post']:+.1f}% vs. pre-2022",
                         delta_color="normal",
                     )
             st.caption("Media semestral de estudiantes por periodo de gobierno.")
@@ -1317,6 +1350,17 @@ with tab_temporal:
         "Se compara la tendencia observada contra lo que habría ocurrido "
         "si la tendencia anterior se hubiera mantenido (escenario sin cambio de política)."
     )
+    with st.expander("¿Qué es ITS (Interrupted Time Series)?"):
+        st.markdown(
+            "**ITS — Series de Tiempo Interrumpidas.** Se ajusta la tendencia de los datos "
+            "**antes** de un evento (aquí, el cambio de gobierno en 2022-S2) y se **proyecta** "
+            "como si nada hubiera pasado. La diferencia entre lo **observado** y esa **proyección** "
+            "es el efecto atribuible al evento.\n\n"
+            "- **Cambio inmediato (nivel):** salto justo después del evento.\n"
+            "- **Cambio de tendencia (pendiente):** cómo cambia el ritmo de crecimiento por semestre.\n\n"
+            "Es un método de un solo grupo: no necesita un grupo de comparación, "
+            "pero asume que la tendencia previa habría continuado igual."
+        )
 
     its_json = _load_json(RESULTS_DIR / f"its_{sector_sel.lower()}_{tipo_evento}.json")
     df_its = _load_csv(
@@ -1457,6 +1501,17 @@ with tab_sectorial:
         "**Privado** después de 2022. Si la política afecta solo al sector oficial, "
         "la diferencia entre ambos debería cambiar tras la intervención."
     )
+    with st.expander("¿Qué es DiD (Diferencias en Diferencias)?"):
+        st.markdown(
+            "**DiD — Diferencias en Diferencias.** Compara dos grupos (aquí **Oficial** vs "
+            "**Privada**) antes y después del evento. La idea: el sector privado actúa como "
+            "**grupo de control** para descontar todo lo que habría pasado de igual forma en "
+            "ambos (economía, demografía).\n\n"
+            "El efecto = *(cambio en Oficial)* − *(cambio en Privada)*. Así se aísla lo "
+            "atribuible a la política que afecta principalmente al sector oficial.\n\n"
+            "Supone **tendencias paralelas**: antes del evento ambos sectores se movían "
+            "de forma similar (esto se chequea en el *event study* de más abajo)."
+        )
 
     did_json = _load_json(RESULTS_DIR / f"did_agregado_{tipo_evento}.json")
     did_panel_json = _load_json(RESULTS_DIR / f"did_panel_{tipo_evento}.json")
@@ -1875,10 +1930,29 @@ with tab_triang:
             st.subheader("Embudo SNIES")
             st.caption(
                 f"Periodo: {embudo_info.get('periodo_min')} a {embudo_info.get('periodo_max')} | "
-                f"Sectores: {', '.join(embudo_info.get('sectores', []))}"
+                "Sectores: Oficial, Privada"
             )
+            # Consolida "privado" dentro de "privada", reagrega los conteos y
+            # recalcula las tasas sobre los totales consolidados.
+            emb = df_embudo.copy()
+            emb["sector_ies"] = emb["sector_ies"].map(_normalize_sector_name)
+            count_cols = ["inscritos", "admitidos", "matriculados", "primer_curso", "graduados"]
+            present = [c for c in count_cols if c in emb.columns]
+            emb = (
+                emb.groupby(["periodo", "sector_ies"], as_index=False)[present].sum(min_count=1)
+            )
+            if {"admitidos", "inscritos"}.issubset(emb.columns):
+                emb["tasa_admision"] = emb["admitidos"] / emb["inscritos"].replace(0, pd.NA)
+            if {"matriculados", "admitidos"}.issubset(emb.columns):
+                emb["tasa_matricula_sobre_admitidos"] = (
+                    emb["matriculados"] / emb["admitidos"].replace(0, pd.NA)
+                )
+            if {"primer_curso", "matriculados"}.issubset(emb.columns):
+                emb["primer_curso_sobre_matriculados"] = (
+                    emb["primer_curso"] / emb["matriculados"].replace(0, pd.NA)
+                )
             _presentation_table(
-                df_embudo,
+                emb,
                 {
                     "periodo": "Periodo",
                     "sector_ies": "Sector",
@@ -1892,6 +1966,12 @@ with tab_triang:
                     "primer_curso_sobre_matriculados": "1ra matrícula / matriculados",
                 },
                 height=320,
+            )
+            st.caption(
+                "Las columnas de **2018** aparecen vacías en «Primera matrícula» y «Graduados» "
+                "porque esos registros en SNIES inician en 2020. Las tres últimas columnas son "
+                "**proporciones** (ej. 0.21 = 21 %); valores >1 indican más matriculados acumulados "
+                "que admitidos del semestre."
             )
 
         if df_icfes is not None and not df_icfes.empty:
