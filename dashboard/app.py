@@ -375,6 +375,55 @@ def _inject_theme_css() -> None:
             border-radius: 16px;
         }
 
+        /* Tablas de presentación (HTML) — no cortan números, hacen scroll */
+        .seminario-table-wrap {
+            overflow: auto;
+            border: 1px solid var(--seminario-border);
+            border-radius: 18px;
+            background: var(--seminario-panel);
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+            margin: 0.35rem 0 1.1rem;
+            animation: seminarioChartIn 520ms ease-out both;
+        }
+
+        .seminario-table-wrap table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .seminario-table-wrap thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            text-align: right;
+            padding: 0.6rem 0.95rem;
+            white-space: nowrap;
+            background: #2b1d3d;
+            color: var(--seminario-purple) !important;
+            font-weight: 800;
+        }
+
+        .seminario-table-wrap tbody td {
+            text-align: right;
+            padding: 0.5rem 0.95rem;
+            white-space: nowrap;
+            color: var(--seminario-text);
+        }
+
+        /* primera columna (etiquetas) alineada a la izquierda */
+        .seminario-table-wrap thead th:first-child,
+        .seminario-table-wrap tbody td:first-child {
+            text-align: left;
+            position: sticky;
+            left: 0;
+            background: #241832;
+        }
+
+        .seminario-table-wrap thead th:first-child {
+            background: #2b1d3d;
+        }
+
         [data-testid="stAlert"] {
             background: rgba(139, 233, 253, 0.08);
             border: 1px solid rgba(139, 233, 253, 0.22);
@@ -877,7 +926,10 @@ def _plotly_chart(fig: go.Figure) -> None:
     )
 
 
-_DECIMAL_HINTS = ("pct", "coef", "tasa", "ratio", "puntaje", "promedio", "proxy", "indicador", "valor", "media", "cambio")
+_DECIMAL_HINTS = (
+    "pct", "coef", "tasa", "ratio", "puntaje", "promedio", "proxy",
+    "indicador", "valor", "media", "cambio", "anual", "variaci", "%",
+)
 
 
 def _style_table(df: pd.DataFrame) -> pd.io.formats.style.Styler:
@@ -948,10 +1000,14 @@ _TECHNICAL_COLS = {
 def _dataframe(df: pd.DataFrame, height: int | None = None) -> None:
     drop_cols = [c for c in df.columns if c.lower() in _TECHNICAL_COLS]
     clean = df.drop(columns=drop_cols) if drop_cols else df
-    kwargs = {"width": "stretch", "hide_index": True}
-    if height is not None:
-        kwargs["height"] = height
-    st.dataframe(_style_table(clean), **kwargs)
+    # Render como HTML: cada columna se ajusta a su contenido y, si la tabla
+    # excede el ancho, el contenedor hace scroll en vez de cortar los números.
+    table_html = _style_table(clean).hide(axis="index").to_html()
+    style = f"max-height:{height}px;" if height is not None else ""
+    st.markdown(
+        f'<div class="seminario-table-wrap" style="{style}">{table_html}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _presentation_table(df: pd.DataFrame, rename: dict[str, str], height: int | None = None) -> None:
@@ -1217,10 +1273,21 @@ with tab_snies:
             _plotly_chart(fig_var)
 
         st.subheader("Datos por semestre y sector")
+        # Normaliza el sector y consolida el rótulo sucio "Privado" dentro de
+        # "Privada" para no mostrar filas duplicadas; recalcula la variación
+        # anual sobre la serie consolidada (mismo semestre del año anterior).
         df_tend_show = df_tend.copy()
         df_tend_show["sector_ies"] = df_tend_show["sector_ies"].map(_normalize_sector_name)
+        df_tend_show = (
+            df_tend_show.groupby(["periodo", "t", "sector_ies"], as_index=False)["total"]
+            .sum()
+            .sort_values(["sector_ies", "t"])
+        )
+        df_tend_show["var_pct_anual"] = (
+            df_tend_show.groupby("sector_ies")["total"].pct_change(periods=2) * 100
+        )
         _presentation_table(
-            df_tend_show,
+            df_tend_show.sort_values(["t", "sector_ies"]),
             {
                 "periodo": "Periodo",
                 "sector_ies": "Sector",
@@ -1228,6 +1295,12 @@ with tab_snies:
                 "var_pct_anual": "Variación anual (%)",
             },
             height=360,
+        )
+        st.caption(
+            "**Variación anual** = cambio frente al mismo semestre del año anterior. "
+            "Aparece vacía en el primer año disponible porque no hay un periodo previo "
+            "con el cual comparar. Además, **2019 no está en la fuente SNIES** (la serie "
+            "pasa de 2018 a 2020), por lo que la primera variación calculada cubre dos años."
         )
 
 
