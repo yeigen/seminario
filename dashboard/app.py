@@ -23,6 +23,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 import streamlit as st
+import streamlit.components.v1 as components
 from plotly.subplots import make_subplots
 
 # ── rutas ────────────────────────────────────────────────────────────────────
@@ -109,20 +110,23 @@ def _inject_theme_css() -> None:
         .stApp::before {
             content: "";
             position: fixed;
-            inset: -4vh -4vw;
+            inset: -6vh -6vw;
             z-index: 0;
             pointer-events: none;
             background-image:
                 linear-gradient(135deg, rgba(23, 18, 31, 0.82), rgba(23, 18, 31, 0.92)),
                 __MAP_BACKGROUND__;
             background-size: cover;
-            background-position: center;
+            /* el mouse desplaza la posición del fondo (parallax via JS) */
+            background-position: calc(50% + var(--parallax-x)) calc(50% + var(--parallax-y));
             background-repeat: no-repeat;
             opacity: 0.34;
             filter: saturate(0.92) contrast(1.05) blur(0.4px);
-            transform: scale(1.08) translate3d(var(--parallax-x), var(--parallax-y), 0);
-            transition: transform 120ms ease-out;
-            will-change: transform;
+            transform-origin: center;
+            will-change: transform, background-position;
+            transition: background-position 140ms ease-out;
+            /* zoom/paneo autónomo (Ken Burns) sobre transform: no choca con el parallax */
+            animation: seminarioKenBurns 40s ease-in-out infinite alternate;
         }
 
         .stApp::after {
@@ -131,12 +135,31 @@ def _inject_theme_css() -> None:
             inset: 0;
             z-index: 0;
             pointer-events: none;
+            /* el glow sigue el cursor (via JS) */
             background:
-                radial-gradient(circle at var(--mouse-x) var(--mouse-y), rgba(189, 147, 249, 0.14), transparent 18rem),
-                radial-gradient(circle at calc(100% - var(--mouse-x)) calc(100% - var(--mouse-y)), rgba(139, 233, 253, 0.08), transparent 22rem);
+                radial-gradient(circle at var(--mouse-x) var(--mouse-y), rgba(189, 147, 249, 0.15), transparent 18rem),
+                radial-gradient(circle at calc(100% - var(--mouse-x)) calc(100% - var(--mouse-y)), rgba(139, 233, 253, 0.09), transparent 22rem);
             mix-blend-mode: screen;
             opacity: 0.85;
-            transition: background-position 120ms ease-out;
+            transition: background 120ms ease-out;
+        }
+
+        @keyframes seminarioKenBurns {
+            0%   { transform: scale(1.06) translate3d(-1.2%, -0.8%, 0); }
+            50%  { transform: scale(1.12) translate3d(1.0%, 0.6%, 0); }
+            100% { transform: scale(1.08) translate3d(0.8%, -1.0%, 0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .stApp::before,
+            .stApp::after,
+            [data-testid="stPlotlyChart"],
+            [data-testid="stDataFrame"],
+            .seminario-metric-card,
+            .seminario-side-group,
+            [data-testid="stMetric"] {
+                animation: none !important;
+            }
         }
 
         [data-testid="stAppViewContainer"],
@@ -279,6 +302,13 @@ def _inject_theme_css() -> None:
             min-width: 0;
             box-sizing: border-box;
             overflow: hidden;
+            /* solo opacidad: no altera la geometría que mide Plotly */
+            animation: seminarioChartIn 560ms ease-out both;
+        }
+
+        @keyframes seminarioChartIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
         }
 
         [data-testid="stPlotlyChart"] > div,
@@ -471,6 +501,51 @@ def _inject_theme_css() -> None:
     st.markdown(css, unsafe_allow_html=True)
 
 
+def _inject_parallax_js() -> None:
+    """Mueve el fondo y el glow siguiendo el cursor.
+
+    Usa components.html (un iframe) para poder ejecutar JS en el documento
+    padre. Eso hace que el navegador imprima warnings inofensivos del tipo
+    'Unrecognized feature: ...'; no afectan el funcionamiento.
+    """
+    components.html(
+        """
+        <script>
+        (() => {
+            const root = window.parent.document.documentElement;
+            let raf = null;
+            let targetX = 0;
+            let targetY = 0;
+
+            function apply() {
+                raf = null;
+                root.style.setProperty('--mouse-x', `${50 + targetX * 50}%`);
+                root.style.setProperty('--mouse-y', `${50 + targetY * 50}%`);
+                root.style.setProperty('--parallax-x', `${targetX * -20}px`);
+                root.style.setProperty('--parallax-y', `${targetY * -16}px`);
+            }
+
+            function onMove(event) {
+                const w = window.parent.innerWidth || 1;
+                const h = window.parent.innerHeight || 1;
+                targetX = (event.clientX / w - 0.5) * 2;
+                targetY = (event.clientY / h - 0.5) * 2;
+                if (!raf) raf = window.parent.requestAnimationFrame(apply);
+            }
+
+            if (window.parent.__seminarioParallaxHandler) {
+                window.parent.removeEventListener('mousemove', window.parent.__seminarioParallaxHandler);
+            }
+            window.parent.__seminarioParallaxHandler = onMove;
+            window.parent.addEventListener('mousemove', onMove, { passive: true });
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
 # ── SVG icons ────────────────────────────────────────────────────────────────
 
 SVG_GRADUATION = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 4 3 6 3s6-1 6-3v-5"/></svg>'
@@ -501,6 +576,7 @@ st.set_page_config(
 )
 
 _inject_theme_css()
+_inject_parallax_js()
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
