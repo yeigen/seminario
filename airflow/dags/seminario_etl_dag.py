@@ -187,6 +187,11 @@ _UNIFIED_TABLES = [
 ]
 _DIM_TABLES = ["dim_institucion", "dim_programa", "dim_tiempo", "dim_sexo"]
 _FACT_TABLES = ["fact_estudiantes", "fact_docentes", "fact_administrativos"]
+_ICFES_FACT_TABLES = ["fact_icfes_saber11", "fact_icfes_saberpro"]
+_ICFES_SCORE_TABLES = [
+    "icfes_saber11_puntajes_trimestral",
+    "icfes_saberpro_puntajes_trimestral",
+]
 
 
 def step_validate_google_auth(**kwargs: Any) -> None:
@@ -271,6 +276,21 @@ def step_normalize(**kwargs: Any) -> None:
     _safe_execute("Normalizar datos", _normalize)
 
 
+def step_normalize_icfes_scores(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(
+        _has_data("raw", t) for t in _ICFES_SCORE_TABLES
+    ):
+        logger.info("SKIP: Puntajes ICFES — tablas trimestrales ya tienen datos")
+        return
+
+    def _normalize_icfes() -> None:
+        from scripts.normalize_icfes_scores import main as normalize_icfes_scores
+
+        normalize_icfes_scores([])
+
+    _safe_execute("Normalizar puntajes ICFES", _normalize_icfes)
+
+
 def step_create_indexes_raw(**kwargs: Any) -> None:
     def _create_indexes() -> None:
         from scripts.create_indexes import create_indexes
@@ -330,6 +350,21 @@ def step_create_facts(**kwargs: Any) -> None:
         create_all_facts()
 
     _safe_execute("Crear hechos", _create_facts)
+
+
+def step_create_icfes_facts(**kwargs: Any) -> None:
+    if not _force_reprocess(kwargs) and all(
+        _has_data("facts", t) for t in _ICFES_FACT_TABLES
+    ):
+        logger.info("SKIP: Crear hechos ICFES — tablas fact ya tienen datos")
+        return
+
+    def _create_icfes_facts() -> None:
+        from scripts.create_icfes_facts import main as create_icfes_facts
+
+        create_icfes_facts()
+
+    _safe_execute("Crear hechos ICFES", _create_icfes_facts)
 
 
 def step_upload(**kwargs: Any) -> None:
@@ -518,6 +553,14 @@ with DAG(
             execution_timeout=timedelta(minutes=45),
         )
 
+        t_normalize_icfes_scores = PythonOperator(
+            task_id="normalize_icfes_scores",
+            python_callable=step_normalize_icfes_scores,
+            retries=2,
+            retry_delay=timedelta(minutes=3),
+            execution_timeout=timedelta(minutes=45),
+        )
+
         t_create_indexes_raw = PythonOperator(
             task_id="create_indexes_raw",
             python_callable=step_create_indexes_raw,
@@ -526,7 +569,7 @@ with DAG(
             execution_timeout=timedelta(minutes=15),
         )
 
-        t_create_db >> t_transform >> t_normalize >> t_create_indexes_raw
+        t_create_db >> t_transform >> t_normalize >> t_normalize_icfes_scores >> t_create_indexes_raw
 
     with TaskGroup(group_id="star_schema") as tg_star_schema:
         t_unify = PythonOperator(
@@ -563,7 +606,15 @@ with DAG(
             sla=timedelta(minutes=30),
         )
 
-        t_unify >> t_create_indexes_unified >> t_dimensions >> t_facts
+        t_icfes_facts = PythonOperator(
+            task_id="create_icfes_facts",
+            python_callable=step_create_icfes_facts,
+            retries=2,
+            retry_delay=timedelta(minutes=2),
+            execution_timeout=timedelta(minutes=15),
+        )
+
+        t_unify >> t_create_indexes_unified >> t_dimensions >> t_facts >> t_icfes_facts
 
     with TaskGroup(group_id="delivery") as tg_delivery:
         t_quality = PythonOperator(
