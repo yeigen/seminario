@@ -69,6 +69,7 @@ COPY --chown=app:app analysis/ /app/analysis/
 COPY --chown=app:app scripts/ /app/scripts/
 COPY --chown=app:app utils/ /app/utils/
 COPY --chown=app:app dashboard/ /app/dashboard/
+COPY --chown=app:app imagenes/ /app/imagenes/
 COPY --chown=app:app main.py /app/main.py
 COPY --chown=app:app pyproject.toml /app/pyproject.toml
 
